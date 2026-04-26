@@ -1,0 +1,58 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+.pnp
+.pnp.js
+build/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+env/
+ENV/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Models & Datasets
+datasets/
+models/*.pt
+models/*.pth
+models/*.h5
+models/*.bin
+models/*.pkl
+*.csv
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# IDEs and Editors
+.vscode/
+.idea/
+*.swp
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Mobile / React Native
+.expo/
+android/app/build/
+ios/build/
+*.mobileprovision
+*.DS_Store
