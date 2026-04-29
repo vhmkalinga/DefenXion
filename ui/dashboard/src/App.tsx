@@ -35,6 +35,7 @@ import { MobileLogin } from "./components/auth/MobileLogin";
 import { ThreatNotificationSystem } from "./components/ThreatNotificationSystem";
 import { getDashboardStats } from "./services/api";
 import { useTheme } from "./context/ThemeContext";
+import { AnalyticsProvider } from "./context/AnalyticsContext";
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -47,15 +48,29 @@ export default function App() {
     total_attacks: 2847,
     high_severity: 127,
     avg_detection_time: "0.23s",
-    auto_responses: 1934
+    auto_responses: 1934,
+    changes: {
+      total_attacks: "+12.5%",
+      high_severity: "+8.3%",
+      avg_detection_time: "-8.2%",
+      auto_responses: "+15.7%"
+    }
   });
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (!isAuthenticated) return;
+
+    const fetchStats = () => {
       getDashboardStats().then(data => {
-        if (data) setStats(data);
+        if (data && data.total_attacks !== undefined) {
+          setStats(data);
+        }
       }).catch(console.error);
-    }
+    };
+
+    fetchStats(); // fetch immediately
+    const interval = setInterval(fetchStats, 5000); // refresh every 5s
+    return () => clearInterval(interval);
   }, [isAuthenticated]);
 
   // =========================
@@ -188,7 +203,7 @@ export default function App() {
       case "reports":
         return <ReportsLogs />;
       case "settings":
-        return <Settings onLogout={handleLogout} />;
+        return <Settings />;
       case "profile":
         return <Profile />;
       default:
@@ -202,25 +217,25 @@ export default function App() {
               <StatCard
                 title="Total Attacks Detected"
                 value={stats.total_attacks.toLocaleString()}
-                change="+12.5%"
+                change={stats.changes.total_attacks}
                 icon={<Shield className="w-5 h-5" />}
               />
               <StatCard
                 title="High Severity Threats"
                 value={stats.high_severity.toLocaleString()}
-                change="+8.3%"
+                change={stats.changes.high_severity}
                 icon={<AlertTriangle className="w-5 h-5" />}
               />
               <StatCard
                 title="Avg Detection Time"
                 value={stats.avg_detection_time}
-                change="-8.2%"
+                change={stats.changes.avg_detection_time}
                 icon={<Clock className="w-5 h-5" />}
               />
               <StatCard
                 title="Auto Responses Executed"
                 value={stats.auto_responses.toLocaleString()}
-                change="+15.7%"
+                change={stats.changes.auto_responses}
                 icon={<Zap className="w-5 h-5" />}
               />
             </div>
@@ -245,7 +260,7 @@ export default function App() {
   // DESKTOP UI
   // =========================
   return (
-    <>
+    <AnalyticsProvider>
       <div className="min-h-screen flex" style={{ backgroundColor: isDark ? '#0D1117' : '#F0F3F6' }}>
         <Sidebar
           activeItem={activeItem}
@@ -263,6 +278,6 @@ export default function App() {
 
       <ThreatNotificationSystem />
       <Toaster position="bottom-right" />
-    </>
+    </AnalyticsProvider>
   );
 }

@@ -8,51 +8,7 @@ import { Button } from '../ui/button';
 import { toast } from 'sonner';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 
-const trainingHistory = [
-  { epoch: 1, accuracy: 72, loss: 0.45 },
-  { epoch: 5, accuracy: 85, loss: 0.28 },
-  { epoch: 10, accuracy: 91, loss: 0.15 },
-  { epoch: 15, accuracy: 94, loss: 0.09 },
-  { epoch: 20, accuracy: 96, loss: 0.06 },
-  { epoch: 25, accuracy: 97.5, loss: 0.04 },
-  { epoch: 30, accuracy: 98.2, loss: 0.03 },
-];
-
-const threatDetectionAccuracy = [
-  { category: 'DDoS', accuracy: 99.2 },
-  { category: 'Malware', accuracy: 97.8 },
-  { category: 'Phishing', accuracy: 96.5 },
-  { category: 'SQL Injection', accuracy: 98.9 },
-  { category: 'XSS', accuracy: 97.3 },
-  { category: 'Brute Force', accuracy: 99.5 },
-];
-
-const models = [
-  {
-    name: 'Threat Detection v3.2',
-    status: 'Active',
-    accuracy: 98.2,
-    version: '3.2.0',
-    lastTrained: '2025-10-15',
-    samples: '2.4M',
-  },
-  {
-    name: 'Anomaly Detection v2.1',
-    status: 'Active',
-    accuracy: 96.8,
-    version: '2.1.0',
-    lastTrained: '2025-10-10',
-    samples: '1.8M',
-  },
-  {
-    name: 'Behavior Analysis v1.9',
-    status: 'Training',
-    accuracy: 94.5,
-    version: '1.9.0-beta',
-    lastTrained: '2025-10-20',
-    samples: '3.1M',
-  },
-];
+// Hardcoded constants removed in favor of dynamic `activeModel` properties
 
 export function AIModel() {
   const [modelStats, setModelStats] = useState<any>(null);
@@ -62,6 +18,8 @@ export function AIModel() {
 
   // Editable training configuration
   const [configAlgorithm, setConfigAlgorithm] = useState('random_forest');
+  const [configDataset, setConfigDataset] = useState('CICIDS2017');
+  const [configUseLiveData, setConfigUseLiveData] = useState(true);
   const [configEstimators, setConfigEstimators] = useState(100);
   const [configMaxDepth, setConfigMaxDepth] = useState<number | null>(null);
   const [configSampleSize, setConfigSampleSize] = useState(50000);
@@ -73,6 +31,11 @@ export function AIModel() {
     { value: 'extra_trees', label: 'Extra Trees' },
     { value: 'knn', label: 'K-Nearest Neighbors' },
     { value: 'svm', label: 'Support Vector Machine' },
+  ];
+
+  const DATASETS = [
+    { value: 'CICIDS2017', label: 'CICIDS2017' },
+    { value: 'UNSW-NB15', label: 'UNSW-NB15' },
   ];
 
   // Default fallback model (shown when MongoDB has no trained models yet)
@@ -140,6 +103,8 @@ export function AIModel() {
             try {
               const res = await trainNewModel({
                 algorithm: configAlgorithm,
+                dataset_name: configDataset,
+                use_live_data: configUseLiveData,
                 n_estimators: configEstimators,
                 max_depth: configMaxDepth,
                 sample_size: configSampleSize,
@@ -167,20 +132,20 @@ export function AIModel() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
           title="Model Accuracy"
-          value={`${activeModel.accuracy}%`}
-          change="+2.1%"
+          value={activeModel?.accuracy ? `${activeModel.accuracy}%` : 'N/A'}
+          change="+Active"
           icon={<TrendingUp className="w-5 h-5" />}
         />
         <StatCard
           title="Training Samples"
-          value={activeModel.sample_size ? `${(activeModel.sample_size / 1000).toFixed(0)}K` : '2.4M'}
-          change="+340K"
+          value={activeModel?.sample_size ? `${(activeModel.sample_size / 1000).toFixed(0)}K` : 'N/A'}
+          change="Samples"
           icon={<Database className="w-5 h-5" />}
         />
         <StatCard
           title="Inference Speed"
-          value={activeModel.predictionTime || '12ms'}
-          change="-3ms"
+          value={activeModel?.predictionTime || '12ms'}
+          change="~avg"
           icon={<Zap className="w-5 h-5" />}
         />
         <StatCard
@@ -192,44 +157,54 @@ export function AIModel() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-          <h3 className="text-[#E6EDF3] mb-6">Training Progress</h3>
+          <h3 className="text-[#E6EDF3] mb-6">Top Features (Feature Importance)</h3>
           <ResponsiveContainer width="100%" height={280}>
-            <LineChart data={trainingHistory}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#30363D" />
-              <XAxis dataKey="epoch" stroke="#7D8590" />
-              <YAxis yAxisId="left" stroke="#7D8590" />
-              <YAxis yAxisId="right" orientation="right" stroke="#7D8590" />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#161B22',
-                  border: '1px solid #30363D',
-                  borderRadius: '8px',
-                  color: '#E6EDF3'
-                }}
-              />
-              <Line yAxisId="left" type="monotone" dataKey="accuracy" stroke="#3FB950" strokeWidth={2} />
-              <Line yAxisId="right" type="monotone" dataKey="loss" stroke="#FF4D4D" strokeWidth={2} />
-            </LineChart>
+            {activeModel?.feature_importances && activeModel.feature_importances.length > 0 ? (
+              <BarChart data={activeModel.feature_importances} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#30363D" />
+                <XAxis dataKey="feature" stroke="#7D8590" angle={-35} textAnchor="end" height={80} tick={{ fontSize: 11 }} />
+                <YAxis width={60} stroke="#7D8590" label={{ value: 'Importance', angle: -90, position: 'insideLeft', fill: '#7D8590', fontSize: 12, offset: -5 }} tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#161B22',
+                    border: '1px solid #30363D',
+                    borderRadius: '8px',
+                    color: '#E6EDF3'
+                  }}
+                />
+                <Bar dataKey="importance" fill="#3FB950" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            ) : (
+              <div className="flex items-center justify-center h-full text-[#7D8590]">
+                Feature importance data not available for this model type.
+              </div>
+            )}
           </ResponsiveContainer>
         </div>
 
         <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
           <h3 className="text-[#E6EDF3] mb-6">Detection Accuracy by Threat Type</h3>
           <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={threatDetectionAccuracy}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#30363D" />
-              <XAxis dataKey="category" stroke="#7D8590" angle={-15} textAnchor="end" height={80} />
-              <YAxis stroke="#7D8590" domain={[90, 100]} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: '#161B22',
-                  border: '1px solid #30363D',
-                  borderRadius: '8px',
-                  color: '#E6EDF3'
-                }}
-              />
-              <Bar dataKey="accuracy" fill="#1F6FEB" radius={[8, 8, 0, 0]} />
-            </BarChart>
+            {activeModel?.threat_detection_accuracy && activeModel.threat_detection_accuracy.length > 0 ? (
+              <BarChart data={activeModel.threat_detection_accuracy} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#30363D" />
+                <XAxis dataKey="category" stroke="#7D8590" angle={-25} textAnchor="end" height={60} tick={{ fontSize: 12 }} />
+                <YAxis width={60} stroke="#7D8590" domain={[0, 100]} label={{ value: 'Accuracy (%)', angle: -90, position: 'insideLeft', fill: '#7D8590', fontSize: 12, offset: -5 }} tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: '#161B22',
+                    border: '1px solid #30363D',
+                    borderRadius: '8px',
+                    color: '#E6EDF3'
+                  }}
+                />
+                <Bar dataKey="accuracy" fill="#1F6FEB" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            ) : (
+              <div className="flex items-center justify-center h-full text-[#7D8590]">
+                Detection accuracy data not available yet.
+              </div>
+            )}
           </ResponsiveContainer>
         </div>
       </div>
@@ -324,6 +299,8 @@ export function AIModel() {
                       try {
                         const res = await trainNewModel({
                           algorithm: model.algorithm || 'random_forest',
+                          dataset_name: configDataset,
+                          use_live_data: configUseLiveData,
                           n_estimators: model.n_estimators || configEstimators,
                           max_depth: model.max_depth || configMaxDepth,
                           sample_size: model.sample_size || configSampleSize,
@@ -374,9 +351,10 @@ export function AIModel() {
         </div>
       </div>
 
-      {/* Model Detail Panel */}
+      {/* Model Detail Modal */}
       {detailModel && (
-        <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#1F6FEB]/40 mb-6">
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#1F6FEB]/40 w-full max-w-3xl shadow-2xl m-4">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[#E6EDF3]">
               Model Details — {detailModel.name || 'Unknown Model'}
@@ -447,6 +425,7 @@ export function AIModel() {
               <span className="text-[#E6EDF3]">{detailModel.triggered_by || 'system'}</span>
             </div>
           </div>
+          </div>
         </div>
       )}
 
@@ -464,6 +443,28 @@ export function AIModel() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
+            <div>
+              <div className="text-[#7D8590] text-sm mb-2">Training Dataset</div>
+              <select
+                value={configDataset}
+                onChange={(e) => setConfigDataset(e.target.value)}
+                className="w-full bg-[#0D1117] border border-[#30363D] rounded-lg p-3 text-[#E6EDF3] text-sm focus:outline-none focus:border-[#1F6FEB] transition-colors cursor-pointer mb-4"
+              >
+                {DATASETS.map(d => (
+                  <option key={d.value} value={d.value}>{d.label}</option>
+                ))}
+              </select>
+              
+              <label className="flex items-center space-x-3 cursor-pointer mt-4">
+                <input 
+                  type="checkbox" 
+                  checked={configUseLiveData} 
+                  onChange={(e) => setConfigUseLiveData(e.target.checked)} 
+                  className="w-4 h-4 rounded border-[#30363D] bg-[#0D1117] text-[#1F6FEB] focus:ring-[#1F6FEB] focus:ring-offset-[#1E232B]"
+                />
+                <span className="text-[#E6EDF3] text-sm">Include Live System Captured Traffic (Online Learning)</span>
+              </label>
+            </div>
             <div>
               <div className="text-[#7D8590] text-sm mb-2">Machine Learning Architecture</div>
               <select

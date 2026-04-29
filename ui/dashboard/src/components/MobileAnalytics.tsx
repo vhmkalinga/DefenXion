@@ -62,9 +62,9 @@ export function MobileAnalytics() {
       <div className="bg-[#1E232B] rounded-2xl p-4 border border-[#30363D]">
         <h3 className="text-[#E6EDF3] mb-4 text-sm">Attack Frequency (24h)</h3>
         <ResponsiveContainer width="100%" height={180}>
-          <LineChart data={attackFrequency}>
-            <XAxis dataKey="hour" stroke="#7D8590" />
-            <YAxis stroke="#7D8590" />
+          <LineChart data={attackFrequency} margin={{ top: 10, right: 20, left: 20, bottom: 20 }}>
+            <XAxis dataKey="hour" stroke="#7D8590" label={{ value: 'Time (24h)', position: 'bottom', fill: '#7D8590', fontSize: 12, offset: 0 }} />
+            <YAxis stroke="#7D8590" label={{ value: 'Attack Count', angle: -90, position: 'insideLeft', fill: '#7D8590', fontSize: 12, offset: -5 }} />
             <Tooltip 
               contentStyle={{ 
                 backgroundColor: '#161B22', 

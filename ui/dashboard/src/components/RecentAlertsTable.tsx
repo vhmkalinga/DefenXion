@@ -30,15 +30,17 @@ export function RecentAlertsTable() {
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
-    if (token) {
+    if (!token) return;
+
+    const fetchAlerts = () => {
       getRecentAlerts()
-        .then(data => {
-          if (data && data.length > 0) {
-            setAlerts(data);
-          }
-        })
+        .then(data => { if (data && data.length > 0) setAlerts(data); })
         .catch(err => console.error("Failed to fetch recent alerts", err));
-    }
+    };
+
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 5000); // poll every 5s
+    return () => clearInterval(interval);
   }, []);
 
   const headColor = isDark ? '#8B949E' : '#57606A';

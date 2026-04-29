@@ -14,6 +14,8 @@ interface TopBarProps {
 interface User {
   username: string;
   role: string;
+  avatar?: string;
+  full_name?: string;
 }
 
 export function TopBar({ onLogout, onNavigate }: TopBarProps) {
@@ -34,6 +36,14 @@ export function TopBar({ onLogout, onNavigate }: TopBarProps) {
     };
 
     fetchUser();
+
+    // Listen for custom event from Profile.tsx to refresh data
+    const handleProfileUpdate = () => fetchUser();
+    window.addEventListener('profileUpdated', handleProfileUpdate);
+    
+    return () => {
+      window.removeEventListener('profileUpdated', handleProfileUpdate);
+    };
   }, []);
 
   // ==========================================
@@ -119,7 +129,7 @@ export function TopBar({ onLogout, onNavigate }: TopBarProps) {
           <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onNavigate('profile')}>
             <Avatar className="w-7 h-7">
               <AvatarImage
-                src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`}
+                src={user.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`}
               />
               <AvatarFallback style={{ fontSize: '11px' }}>
                 {user.username.charAt(0).toUpperCase()}
@@ -130,7 +140,7 @@ export function TopBar({ onLogout, onNavigate }: TopBarProps) {
                 className="text-sm font-medium leading-tight"
                 style={{ color: isDark ? '#E6EDF3' : '#1F2328' }}
               >
-                {user.username}
+                {user.full_name || user.username}
               </div>
               <div
                 className="text-[10px] uppercase font-medium leading-tight"

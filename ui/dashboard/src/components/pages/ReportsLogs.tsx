@@ -15,6 +15,8 @@ export function ReportsLogs() {
   const [selectedReport, setSelectedReport] = useState<any>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [reportPeriod, setReportPeriod] = useState('daily');
+  const [customStartDate, setCustomStartDate] = useState('');
+  const [customEndDate, setCustomEndDate] = useState('');
 
   // ── Logs state ──
   const [logs, setLogs] = useState<any[]>([]);
@@ -55,7 +57,11 @@ export function ReportsLogs() {
   const handleGenerate = async () => {
     setIsGenerating(true);
     try {
-      const report = await generateReport(reportPeriod);
+      const report = await generateReport(
+        reportPeriod,
+        reportPeriod === 'custom' ? customStartDate : undefined,
+        reportPeriod === 'custom' ? customEndDate : undefined
+      );
       toast.success(`Report ${report.report_id} generated successfully!`);
       fetchReports();
     } catch {
@@ -128,9 +134,29 @@ export function ReportsLogs() {
               <SelectItem value="daily" className="text-[#E6EDF3]">Daily Report</SelectItem>
               <SelectItem value="weekly" className="text-[#E6EDF3]">Weekly Report</SelectItem>
               <SelectItem value="monthly" className="text-[#E6EDF3]">Monthly Report</SelectItem>
+              <SelectItem value="custom" className="text-[#E6EDF3]">Custom Timeframe</SelectItem>
               <SelectItem value="all" className="text-[#E6EDF3]">All Time</SelectItem>
             </SelectContent>
           </Select>
+
+          {reportPeriod === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] text-sm rounded-md px-3 py-2 outline-none focus:border-[#1F6FEB] [color-scheme:dark]"
+              />
+              <span className="text-[#7D8590]">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="bg-[#0D1117] border border-[#30363D] text-[#E6EDF3] text-sm rounded-md px-3 py-2 outline-none focus:border-[#1F6FEB] [color-scheme:dark]"
+              />
+            </div>
+          )}
+
           <Button
             className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90 gap-2"
             disabled={isGenerating}
@@ -176,7 +202,8 @@ export function ReportsLogs() {
                             report.period_type === 'monthly' ? 'border-[#BC8CFF] text-[#BC8CFF]' :
                               report.period_type === 'weekly' ? 'border-[#3FB950] text-[#3FB950]' :
                                 report.period_type === 'all' ? 'border-[#FFA657] text-[#FFA657]' :
-                                  'border-[#7D8590] text-[#7D8590]'
+                                  report.period_type === 'custom' ? 'border-[#58A6FF] text-[#58A6FF]' :
+                                    'border-[#7D8590] text-[#7D8590]'
                           }>
                             {report.period_type.charAt(0).toUpperCase() + report.period_type.slice(1)}
                           </Badge>

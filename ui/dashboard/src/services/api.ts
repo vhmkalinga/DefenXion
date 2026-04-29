@@ -161,6 +161,21 @@ export const getDashboardTraffic = async () => {
   return response.data;
 };
 
+export const getPortBreakdown = async () => {
+  const response = await api.get("/dashboard/analytics/port-breakdown");
+  return response.data;
+};
+
+export const getTopSources = async () => {
+  const response = await api.get("/dashboard/analytics/top-sources");
+  return response.data;
+};
+
+export const getGlobalSources = async () => {
+  const response = await api.get("/dashboard/analytics/global-sources");
+  return response.data;
+};
+
 export const getAllThreats = async (page = 1, limit = 20) => {
   const response = await api.get(`/dashboard/threats?page=${page}&limit=${limit}`);
   return response.data;
@@ -259,8 +274,11 @@ export const getReports = async () => {
   return response.data;
 };
 
-export const generateReport = async (period: string = 'daily') => {
-  const response = await api.post(`/reports/generate?period=${period}`);
+export const generateReport = async (period: string = 'daily', startDate?: string, endDate?: string) => {
+  let url = `/reports/generate?period=${period}`;
+  if (startDate) url += `&start_date=${startDate}`;
+  if (endDate) url += `&end_date=${endDate}`;
+  const response = await api.post(url);
   return response.data;
 };
 
@@ -311,6 +329,17 @@ export const createUser = async (username: string, email: string, password: stri
 
 export const deleteUser = async (username: string) => {
   const response = await api.delete(`/users/${username}`);
+  return response.data;
+};
+
+// ── Profile ──
+export const getMe = async () => {
+  const response = await api.get("/auth/me");
+  return response.data;
+};
+
+export const updateMe = async (data: { full_name?: string; email?: string; phone?: string; location?: string; avatar?: string }) => {
+  const response = await api.put("/auth/me", data);
   return response.data;
 };
 

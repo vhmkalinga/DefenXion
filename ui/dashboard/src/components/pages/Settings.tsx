@@ -20,11 +20,7 @@ import {
 } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 
-interface SettingsProps {
-  onLogout: () => void;
-}
-
-export function Settings({ onLogout }: SettingsProps) {
+export function Settings() {
   const { isDark, setDark } = useTheme();
 
   // ── State ──
@@ -205,7 +201,7 @@ export function Settings({ onLogout }: SettingsProps) {
                   <Globe className="w-4 h-4" />
                   <SelectValue placeholder="Select timezone" />
                 </SelectTrigger>
-                <SelectContent style={{ backgroundColor: 'var(--dx-bg-secondary)', borderColor: 'var(--dx-border)' }}>
+                <SelectContent style={{ backgroundColor: isDark ? '#161B22' : '#ffffff', borderColor: 'var(--dx-border)' }}>
                   <SelectItem value="utc" style={{ color: 'var(--dx-text-primary)' }}>UTC (GMT+0)</SelectItem>
                   <SelectItem value="est" style={{ color: 'var(--dx-text-primary)' }}>Eastern Time (GMT-5)</SelectItem>
                   <SelectItem value="cst" style={{ color: 'var(--dx-text-primary)' }}>Central Time (GMT-6)</SelectItem>
@@ -241,29 +237,101 @@ export function Settings({ onLogout }: SettingsProps) {
         {/* ── Notifications ── */}
         <TabsContent value="notifications">
           <div className="rounded-2xl p-6 space-y-6" style={{ backgroundColor: 'var(--dx-bg-card)', border: '1px solid var(--dx-border)' }}>
-            {[
-              { key: 'notifications.critical_alerts', icon: Shield, iconColor: 'text-red-500', title: 'Critical Threat Alerts', desc: 'Instant push notifications for high-risk threats' },
-              { key: 'notifications.email_reports', icon: Mail, iconColor: 'text-blue-400', title: 'Email Reports', desc: 'Periodic security summary emails' },
-              { key: 'notifications.weekly_digest', icon: Bell, iconColor: 'text-yellow-400', title: 'Weekly Digest', desc: 'Comprehensive weekly security digest' },
-              { key: 'notifications.slack_integration', icon: Slack, iconColor: 'text-purple-400', title: 'Slack Notifications', desc: 'Send alerts to a Slack channel' },
-            ].map((item, i) => (
-              <div key={item.key}>
-                {i > 0 && <Separator style={{ background: 'var(--dx-border)' }} className="mb-6" />}
-                <div className="flex justify-between items-center">
-                  <div className="flex gap-3 items-center">
-                    <item.icon className={`w-5 h-5 ${item.iconColor}`} />
-                    <div>
-                      <div style={{ color: 'var(--dx-text-primary)' }}>{item.title}</div>
-                      <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>{item.desc}</div>
-                    </div>
+            {/* Critical Alerts */}
+            <div>
+              <div className="flex justify-between items-center">
+                <div className="flex gap-3 items-center">
+                  <Shield className="w-5 h-5 text-red-500" />
+                  <div>
+                    <div style={{ color: 'var(--dx-text-primary)' }}>Critical Threat Alerts</div>
+                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Instant push notifications for high-risk threats</div>
                   </div>
-                  <Switch
-                    checked={item.key.split('.').reduce((o: any, k) => o?.[k], settings)}
-                    onCheckedChange={v => updateField(item.key, v)}
+                </div>
+                <Switch
+                  checked={settings.notifications?.critical_alerts}
+                  onCheckedChange={v => updateField('notifications.critical_alerts', v)}
+                />
+              </div>
+            </div>
+
+            <Separator style={{ background: 'var(--dx-border)' }} />
+
+            {/* Email Reports */}
+            <div>
+              <div className="flex justify-between items-center">
+                <div className="flex gap-3 items-center">
+                  <Mail className="w-5 h-5 text-blue-400" />
+                  <div>
+                    <div style={{ color: 'var(--dx-text-primary)' }}>Email Reports</div>
+                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Periodic security summary emails</div>
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.notifications?.email_reports}
+                  onCheckedChange={v => updateField('notifications.email_reports', v)}
+                />
+              </div>
+              {(settings.notifications?.email_reports || settings.notifications?.critical_alerts) && (
+                <div className="mt-4 pl-8">
+                  <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Destination Email Address</label>
+                  <Input
+                    placeholder="admin@defenxion.com"
+                    value={settings.notifications?.email_address || ''}
+                    onChange={e => updateField('notifications.email_address', e.target.value)}
+                    style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
                   />
                 </div>
+              )}
+            </div>
+
+            <Separator style={{ background: 'var(--dx-border)' }} />
+
+            {/* Weekly Digest */}
+            <div>
+              <div className="flex justify-between items-center">
+                <div className="flex gap-3 items-center">
+                  <Bell className="w-5 h-5 text-yellow-400" />
+                  <div>
+                    <div style={{ color: 'var(--dx-text-primary)' }}>Weekly Digest</div>
+                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Comprehensive weekly security digest</div>
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.notifications?.weekly_digest}
+                  onCheckedChange={v => updateField('notifications.weekly_digest', v)}
+                />
               </div>
-            ))}
+            </div>
+
+            <Separator style={{ background: 'var(--dx-border)' }} />
+
+            {/* Slack Integration */}
+            <div>
+              <div className="flex justify-between items-center">
+                <div className="flex gap-3 items-center">
+                  <Slack className="w-5 h-5 text-purple-400" />
+                  <div>
+                    <div style={{ color: 'var(--dx-text-primary)' }}>Slack Notifications</div>
+                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Send alerts to a Slack channel</div>
+                  </div>
+                </div>
+                <Switch
+                  checked={settings.notifications?.slack_integration}
+                  onCheckedChange={v => updateField('notifications.slack_integration', v)}
+                />
+              </div>
+              {settings.notifications?.slack_integration && (
+                <div className="mt-4 pl-8">
+                  <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Slack Webhook URL</label>
+                  <Input
+                    placeholder="https://hooks.slack.com/services/..."
+                    value={settings.notifications?.slack_webhook_url || ''}
+                    onChange={e => updateField('notifications.slack_webhook_url', e.target.value)}
+                    style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
+                  />
+                </div>
+              )}
+            </div>
           </div>
         </TabsContent>
 
@@ -295,7 +363,7 @@ export function Settings({ onLogout }: SettingsProps) {
                   <Clock className="w-4 h-4 mr-2" />
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent style={{ backgroundColor: 'var(--dx-bg-secondary)', borderColor: 'var(--dx-border)' }}>
+                <SelectContent style={{ backgroundColor: isDark ? '#161B22' : '#ffffff', borderColor: 'var(--dx-border)' }}>
                   <SelectItem value="15" style={{ color: 'var(--dx-text-primary)' }}>15 minutes</SelectItem>
                   <SelectItem value="30" style={{ color: 'var(--dx-text-primary)' }}>30 minutes</SelectItem>
                   <SelectItem value="60" style={{ color: 'var(--dx-text-primary)' }}>1 hour</SelectItem>
@@ -453,6 +521,39 @@ export function Settings({ onLogout }: SettingsProps) {
 
             <Separator className="bg-[#30363D]" />
 
+            {/* SMTP Configuration */}
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                <div className="flex gap-3 items-center">
+                  <Mail className="w-5 h-5 text-gray-400" />
+                  <div>
+                    <div className="text-[#E6EDF3]">SMTP Server (Outbound Email)</div>
+                    <div className="text-[#7D8590] text-sm">Required for sending email reports and critical alerts</div>
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-[#7D8590] text-sm block mb-1">SMTP Host</label>
+                  <Input value={settings.smtp?.host || ''} onChange={e => updateField('smtp.host', e.target.value)} placeholder="smtp.gmail.com" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
+                </div>
+                <div>
+                  <label className="text-[#7D8590] text-sm block mb-1">SMTP Port</label>
+                  <Input value={settings.smtp?.port || ''} onChange={e => updateField('smtp.port', parseInt(e.target.value) || 587)} placeholder="587" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
+                </div>
+                <div>
+                  <label className="text-[#7D8590] text-sm block mb-1">SMTP Username / Email</label>
+                  <Input value={settings.smtp?.username || ''} onChange={e => updateField('smtp.username', e.target.value)} placeholder="admin@example.com" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
+                </div>
+                <div>
+                  <label className="text-[#7D8590] text-sm block mb-1">SMTP App Password</label>
+                  <Input type="password" value={settings.smtp?.password || ''} onChange={e => updateField('smtp.password', e.target.value)} placeholder="••••••••" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
+                </div>
+              </div>
+            </div>
+
+            <Separator className="bg-[#30363D]" />
+
             {/* Team Management */}
             <div>
               <div className="flex justify-between items-center mb-4">
@@ -551,24 +652,7 @@ export function Settings({ onLogout }: SettingsProps) {
         </TabsContent>
       </Tabs>
 
-      {/* Footer */}
-      <div className="mt-10 flex justify-between">
-        <Button
-          variant="outline"
-          className="border-red-500 text-red-500 hover:bg-red-500/10"
-          onClick={onLogout}
-        >
-          Logout
-        </Button>
-        <Button
-          className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90 gap-2"
-          disabled={isSaving || !hasChanges}
-          onClick={handleSave}
-        >
-          <Save className="w-4 h-4" />
-          {isSaving ? 'Saving...' : 'Save Changes'}
-        </Button>
-      </div>
+
     </div>
   );
 }

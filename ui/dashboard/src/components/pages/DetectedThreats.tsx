@@ -17,11 +17,17 @@ export function DetectedThreats() {
   const [selectedThreat, setSelectedThreat] = useState<any | null>(null);
 
   useEffect(() => {
-    getAllThreats(1, 100)
-      .then(res => {
-        if (res && res.data) setThreats(res.data);
-      })
-      .catch(console.error);
+    const fetchThreats = () => {
+      getAllThreats(1, 100)
+        .then(res => {
+          if (res && res.data) setThreats(res.data);
+        })
+        .catch(console.error);
+    };
+
+    fetchThreats(); // Fetch immediately
+    const interval = setInterval(fetchThreats, 5000); // Refresh every 5s
+    return () => clearInterval(interval);
   }, []);
 
   const filteredThreats = threats.filter(threat => {
