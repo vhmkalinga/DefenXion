@@ -268,6 +268,27 @@ export function Profile() {
 
         <div className="space-y-6">
           <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
+            <h3 className="text-[#E6EDF3] mb-6">Recent Login Activity</h3>
+            <div className="space-y-4">
+              {profile.login_history && profile.login_history.length > 0 ? (
+                [...profile.login_history].reverse().map((login: any, index: number) => (
+                  <div key={index} className="flex items-start gap-4 pb-4 border-b border-[#30363D] last:border-0 last:pb-0">
+                    <div className="w-2 h-2 rounded-full mt-2 bg-[#1F6FEB]" />
+                    <div className="flex-1">
+                      <div className="text-[#E6EDF3] font-mono text-sm">{login.ip}</div>
+                      <div className="text-[#7D8590] text-xs mt-1">
+                        {new Date(login.timestamp).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="text-[#7D8590] text-sm">No recent login activity.</div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
             <h3 className="text-[#E6EDF3] mb-6">Achievements</h3>
             <div className="space-y-4">
               {achievements.map((achievement, index) => (

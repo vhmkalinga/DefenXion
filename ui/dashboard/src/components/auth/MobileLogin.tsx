@@ -7,10 +7,9 @@ import { Checkbox } from '../ui/checkbox';
 
 interface MobileLoginProps {
   onLogin: () => void;
-  onSwitchToSignup: () => void;
 }
 
-export function MobileLogin({ onLogin, onSwitchToSignup }: MobileLoginProps) {
+export function MobileLogin({ onLogin }: MobileLoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -99,6 +98,7 @@ export function MobileLogin({ onLogin, onSwitchToSignup }: MobileLoginProps) {
             <Button
               type="button"
               variant="link"
+              onClick={() => alert("Please contact your system administrator to reset your password. \n\n(Option A: Secure Admin Reset Policy)")}
               className="text-[#58A6FF] hover:text-[#1F6FEB] p-0 h-auto text-sm"
             >
               Forgot?
@@ -121,20 +121,6 @@ export function MobileLogin({ onLogin, onSwitchToSignup }: MobileLoginProps) {
           </Button>
         </motion.form>
 
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.4 }}
-          className="mt-8 text-center"
-        >
-          <span className="text-[#7D8590]">Don't have an account? </span>
-          <button
-            onClick={onSwitchToSignup}
-            className="text-[#58A6FF] hover:text-[#1F6FEB]"
-          >
-            Sign up
-          </button>
-        </motion.div>
       </motion.div>
 
       <motion.p 

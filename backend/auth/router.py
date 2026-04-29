@@ -125,10 +125,22 @@ def login_user(
             detail="Invalid username or password"
         )
 
-    # ---------- RESET FAILED ATTEMPTS ----------
+    # ---------- RESET FAILED ATTEMPTS & LOG HISTORY ----------
+    login_entry = {
+        "ip": ip,
+        "timestamp": datetime.utcnow()
+    }
     users_collection.update_one(
         {"username": user["username"]},
-        {"$set": {"failed_attempts": 0}}
+        {
+            "$set": {"failed_attempts": 0},
+            "$push": {
+                "login_history": {
+                    "$each": [login_entry],
+                    "$slice": -10  # Keep only the last 10 logins
+                }
+            }
+        }
     )
 
     # ---------- GENERATE TOKENS ----------
@@ -240,6 +252,7 @@ def get_me(current_user: dict = Depends(get_current_user)):
         "phone": user.get("phone", ""),
         "location": user.get("location", ""),
         "avatar": user.get("avatar", ""),
+        "login_history": user.get("login_history", []),
         "member_since": user.get("created_at", datetime.utcnow().strftime("%B %Y")) if isinstance(user.get("created_at"), str) else (user.get("created_at").strftime("%B %Y") if user.get("created_at") else datetime.utcnow().strftime("%B %Y"))
     }
 

@@ -8,14 +8,10 @@ import axios from "axios";
 
 interface LoginProps {
   onLogin: () => void;
-  onSwitchToSignup: () => void;
-  onForgotPassword: () => void;
 }
 
 export function Login({
   onLogin,
-  onSwitchToSignup,
-  onForgotPassword,
 }: LoginProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [username, setUsername] = useState("");
@@ -151,7 +147,7 @@ export function Login({
               <Button
                 type="button"
                 variant="link"
-                onClick={onForgotPassword}
+                onClick={() => alert("Please contact your system administrator to reset your password. \n\n(Option A: Secure Admin Reset Policy)")}
                 className="text-[#58A6FF] hover:text-[#1F6FEB] p-0 h-auto"
               >
                 Forgot password?
@@ -167,21 +163,6 @@ export function Login({
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-
-          {/* Switch to Signup */}
-          <div className="mt-6 text-center">
-            <span className="text-[#7D8590] text-sm">
-              Don't have an account?{" "}
-            </span>
-            <Button
-              type="button"
-              variant="link"
-              onClick={onSwitchToSignup}
-              className="text-[#58A6FF] hover:text-[#1F6FEB] p-0 h-auto text-sm"
-            >
-              Sign up
-            </Button>
-          </div>
         </div>
 
         <p className="text-center text-[#7D8590] text-xs mt-6">

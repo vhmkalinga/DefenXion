@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Shield, Mail, Database, Users, Globe, Lock, Bell, Slack,
   Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive,
-  FileText, AlertTriangle, Plus, Trash2, UserPlus, X, Crown
+  FileText, AlertTriangle, Plus, Trash2, UserPlus, X, Crown, Key
 } from "lucide-react";
 import { Switch } from "../ui/switch";
 import { Button } from "../ui/button";
@@ -13,10 +13,11 @@ import {
 import { Separator } from "../ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
 import { Badge } from "../ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { toast } from 'sonner';
 import {
   getAppSettings, updateAppSettings, changePassword, getSystemInfo,
-  listUsers, createUser, deleteUser
+  listUsers, createUser, deleteUser, adminResetPassword
 } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 
@@ -60,6 +61,11 @@ export function Settings() {
   const [newEmail, setNewEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState('user');
+
+  // Admin Reset Password
+  const [resetUser, setResetUser] = useState<string | null>(null);
+  const [adminResetPasswordValue, setAdminResetPasswordValue] = useState('');
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   // ── Fetch ──
   useEffect(() => {
@@ -150,6 +156,25 @@ export function Settings() {
       getSystemInfo().then(setSystemInfo).catch(console.error);
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || 'Failed to delete user');
+    }
+  };
+
+  const handleAdminResetPassword = async () => {
+    if (!resetUser) return;
+    if (adminResetPasswordValue.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    setIsResettingPassword(true);
+    try {
+      await adminResetPassword(resetUser, adminResetPasswordValue);
+      toast.success(`Password for ${resetUser} has been reset successfully!`);
+      setResetUser(null);
+      setAdminResetPasswordValue('');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Failed to reset password');
+    } finally {
+      setIsResettingPassword(false);
     }
   };
 
@@ -590,6 +615,7 @@ export function Settings() {
                     <div>
                       <label className="text-[#7D8590] text-sm block mb-1">Password</label>
                       <Input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Min 8 characters" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
+                      <p className="text-xs text-[#7D8590] mt-1">Must be at least 8 characters long.</p>
                     </div>
                     <div>
                       <label className="text-[#7D8590] text-sm block mb-1">Role</label>
@@ -638,10 +664,18 @@ export function Settings() {
                       )}
                       <Button
                         variant="ghost" size="sm"
+                        className="text-[#58A6FF] hover:text-[#58A6FF]/80 gap-1"
+                        onClick={() => setResetUser(user.username)}
+                        title="Reset Password"
+                      >
+                        <Key className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost" size="sm"
                         className="text-[#FF4D4D] hover:text-[#FF4D4D]/80 gap-1"
                         onClick={() => handleDeleteUser(user.username)}
                       >
-                        <Trash2 className="w-3 h-3" />
+                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
@@ -652,6 +686,36 @@ export function Settings() {
         </TabsContent>
       </Tabs>
 
+      {/* Admin Reset Password Dialog */}
+      <Dialog open={!!resetUser} onOpenChange={(open) => { if (!open) setResetUser(null); setAdminResetPasswordValue(''); }}>
+        <DialogContent className="bg-[#161B22] border-[#30363D] text-[#E6EDF3] sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Reset Password</DialogTitle>
+            <DialogDescription className="text-[#7D8590]">
+              Enter a new strong password for <strong className="text-[#E6EDF3]">{resetUser}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm text-[#C9D1D9]">New Password</label>
+              <Input
+                type="password"
+                value={adminResetPasswordValue}
+                onChange={(e) => setAdminResetPasswordValue(e.target.value)}
+                placeholder="Minimum 8 characters"
+                className="bg-[#0D1117] border-[#30363D] text-[#E6EDF3]"
+              />
+            </div>
+            <Button 
+              className="w-full bg-[#1F6FEB] hover:bg-[#1F6FEB]/90" 
+              onClick={handleAdminResetPassword}
+              disabled={isResettingPassword}
+            >
+              {isResettingPassword ? "Resetting..." : "Confirm Password Reset"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

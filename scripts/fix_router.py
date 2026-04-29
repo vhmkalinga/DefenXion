@@ -1,0 +1,8 @@
+content = open('backend/chat/router.py', 'r', encoding='utf-8').read()
+content = content.replace('action_url="/dashboard/threats"', 'action_url="threats"')
+content = content.replace('action_url="/dashboard/reports"', 'action_url="reports"')
+content = content.replace('action_url="/dashboard/defense"', 'action_url="defense"')
+content = content.replace('action_url="/dashboard/settings"', 'action_url="settings"')
+content = content.replace('action_url="/dashboard/model"', 'action_url="model"')
+open('backend/chat/router.py', 'w', encoding='utf-8').write(content)
+print('Done')
