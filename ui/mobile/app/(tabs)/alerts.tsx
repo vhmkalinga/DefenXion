@@ -1,125 +1,124 @@
-import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Theme from '../../constants/theme';
-import Constants from 'expo-constants';
+import { fetchRecentAlerts } from '../../constants/api';
 
-type ThreatAlert = {
-  id: string;
-  type: string;
-  source_ip: string;
-  message: string;
-  timestamp: string;
-  severity: string;
-};
-
-// WebSocket Configuration
-const getHostUrl = () => {
-  let host = 'localhost';
-  if (Constants.expoConfig?.hostUri) {
-    host = Constants.expoConfig.hostUri.split(':')[0];
-  }
-  return host;
-};
-
-const hostIp = getHostUrl();
-const WS_BASE_URL = `ws://${hostIp}:8000/ws/threats`;
+function timeAgo(ts: string) {
+  if (!ts) return '';
+  const diff = Math.floor((Date.now() - new Date(ts).getTime()) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  return `${Math.floor(diff / 3600)}h ago`;
+}
 
 export default function ThreatsScreen() {
-  const [alerts, setAlerts] = useState<ThreatAlert[]>([]);
-  const [isConnected, setIsConnected] = useState(false);
-  const ws = useRef<WebSocket | null>(null);
+  const [alerts, setAlerts]       = useState<any[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [count, setCount]         = useState(0);
 
-  useEffect(() => {
-    const connectWebSocket = () => {
-      ws.current = new WebSocket(WS_BASE_URL);
-
-      ws.current.onopen = () => setIsConnected(true);
-
-      ws.current.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          const newAlert: ThreatAlert = {
-            id: Math.random().toString(36).substring(7),
-            type: data.type || 'info', 
-            source_ip: data.source_ip || '192.168.1.104',
-            message: data.message || 'Suspicious packet payload detected.',
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            severity: data.type === 'critical' ? 'CRITICAL' : data.type === 'high' ? 'HIGH' : 'MEDIUM'
-          };
-          setAlerts((prev) => [newAlert, ...prev].slice(0, 50));
-        } catch (err) {
-          console.error(err);
-        }
-      };
-
-      ws.current.onclose = () => {
-        setIsConnected(false);
-        setTimeout(connectWebSocket, 3000);
-      };
-    };
-
-    connectWebSocket();
-    return () => { if (ws.current) ws.current.close(); };
+  const fetchAll = useCallback(async (silent = false) => {
+    try {
+      const data = await fetchRecentAlerts();
+      if (Array.isArray(data)) {
+        setAlerts(data);
+        setCount(data.length);
+      }
+    } catch (e) {
+      console.error('Alerts fetch error:', e);
+    } finally {
+      if (!silent) setLoading(false);
+      setRefreshing(false);
+    }
   }, []);
 
-  const renderAlert = ({ item }: { item: ThreatAlert }) => {
-    const isCritical = item.severity === 'CRITICAL';
-    const isHigh = item.severity === 'HIGH';
+  useEffect(() => {
+    fetchAll();
+    const id = setInterval(() => fetchAll(true), 5000);
+    return () => clearInterval(id);
+  }, []);
 
-    const cardThemeColor = isCritical ? Theme.colors.danger : isHigh ? Theme.colors.warning : Theme.colors.primary;
-    const cardThemeColorDim = isCritical ? Theme.colors.dangerDim : isHigh ? Theme.colors.warningDim : Theme.colors.primaryDim;
+  const onRefresh = () => { setRefreshing(true); fetchAll(); };
+
+  const renderAlert = ({ item }: { item: any }) => {
+    const isCritical = item.severity === 'Critical';
+    const isHigh     = item.severity === 'High';
+    const color     = isCritical ? Theme.colors.danger : isHigh ? Theme.colors.warning : Theme.colors.primary;
+    const colorDim  = isCritical ? Theme.colors.dangerDim : isHigh ? Theme.colors.warningDim : Theme.colors.primaryDim;
+    const iconName  = isCritical ? 'alert-circle' : isHigh ? 'warning' : 'information-circle';
+    const ip        = item.sourceIp || item.source_ip || 'Unknown';
+    const conf      = item.confidence; // already 0-100 from backend
 
     return (
-      <View style={[styles.card, { borderColor: cardThemeColorDim }]}>
+      <View style={[styles.card, { borderTopColor: color, borderLeftColor: colorDim }]}>
         <View style={styles.cardHeader}>
-          <View style={styles.headerTitleBox}>
-             <Ionicons name="warning" size={16} color={cardThemeColor} />
-             <Text style={styles.ipText}>{item.source_ip}</Text>
+          <View style={styles.headerLeft}>
+            <Ionicons name={iconName} size={16} color={color} />
+            <Text style={styles.ipText}>{ip}</Text>
           </View>
-          <View style={[styles.badge, { backgroundColor: cardThemeColorDim }]}>
-             <Text style={[styles.badgeText, { color: cardThemeColor }]}>{item.severity}</Text>
+          <View style={[styles.badge, { backgroundColor: colorDim }]}>
+            <Text style={[styles.badgeText, { color }]}>{item.severity?.toUpperCase() || 'MEDIUM'}</Text>
           </View>
         </View>
 
-        <Text style={styles.cardMessage}>{item.message}</Text>
-        
+        <Text style={styles.actionText}>
+          {item.status || item.type || 'Network Intrusion'}
+        </Text>
+
+        {conf != null && (
+          <View style={styles.confRow}>
+            <View style={styles.confBarBg}>
+              <View style={[styles.confBarFill, { width: `${Math.round(conf)}%` as any, backgroundColor: color }]} />
+            </View>
+            <Text style={[styles.confLabel, { color }]}>{Math.round(conf)}% conf</Text>
+          </View>
+        )}
+
         <View style={styles.cardBottom}>
-           <Text style={styles.cardTime}>{item.timestamp}</Text>
-           <TouchableOpacity style={[styles.actionBtn, { backgroundColor: cardThemeColorDim }]}>
-              <Text style={[styles.actionBtnText, { color: cardThemeColor }]}>BLOCK ORIGIN</Text>
-           </TouchableOpacity>
+          <Text style={styles.cardTime}>{timeAgo(item.timestamp)}</Text>
+          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colorDim }]}>
+            <Text style={[styles.actionBtnText, { color }]}>BLOCK ORIGIN</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
   };
 
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Threat Intelligence Feed</Text>
-        <View style={styles.statusBadge}>
-          <View style={[styles.statusDot, { backgroundColor: isConnected ? Theme.colors.success : Theme.colors.danger }]} />
-          <Text style={styles.statusText}>{isConnected ? 'LIVE' : 'RECONNECTING...'}</Text>
+        <View>
+          <Text style={styles.headerTitle}>Threat Intelligence</Text>
+          <Text style={styles.headerSub}>{count} recent events</Text>
+        </View>
+        <View style={styles.liveBadge}>
+          <View style={styles.liveDot} />
+          <Text style={styles.liveText}>POLLING</Text>
         </View>
       </View>
 
-      {alerts.length === 0 ? (
-        <View style={styles.emptyState}>
-          {isConnected ? (
-             <Text style={styles.emptyStateText}>Network is quiet. No active threats.</Text>
-          ) : (
-             <ActivityIndicator size="large" color={Theme.colors.primary} />
-          )}
+      {loading ? (
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" color={Theme.colors.primary} />
         </View>
       ) : (
         <FlatList
           data={alerts}
-          keyExtractor={(item) => item.id}
+          keyExtractor={(_, i) => i.toString()}
           renderItem={renderAlert}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.colors.primary} />}
+          ListEmptyComponent={
+            <View style={styles.emptyState}>
+              <Ionicons name="shield-checkmark-outline" size={48} color={Theme.colors.success} />
+              <Text style={styles.emptyText}>No threats detected</Text>
+              <Text style={styles.emptySubText}>Run the traffic simulator to generate data</Text>
+            </View>
+          }
         />
       )}
     </SafeAreaView>
@@ -127,29 +126,36 @@ export default function ThreatsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Theme.colors.background },
-  header: { padding: Theme.spacing.lg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle: { color: Theme.colors.text, fontSize: 20, fontWeight: 'bold' },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Theme.colors.surfaceHighlight, paddingHorizontal: 10, paddingVertical: 4, borderRadius: Theme.radii.full, borderWidth: 1, borderColor: '#21262D' },
-  statusDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
-  statusText: { color: Theme.colors.text, fontSize: 10, fontWeight: 'bold' },
-  
-  listContent: { paddingHorizontal: Theme.spacing.lg, paddingBottom: Theme.spacing.xl, gap: Theme.spacing.md },
-  
-  card: { backgroundColor: Theme.colors.surface, padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderTopWidth: 4 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm },
-  headerTitleBox: { flexDirection: 'row', alignItems: 'center', gap: Theme.spacing.sm },
-  ipText: { color: Theme.colors.text, fontSize: 16, fontWeight: 'bold', letterSpacing: 1 },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 },
-  badgeText: { fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
-  
-  cardMessage: { color: Theme.colors.textMuted, fontSize: 14, lineHeight: 22, marginVertical: Theme.spacing.sm },
-  
-  cardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Theme.spacing.sm },
-  cardTime: { color: Theme.colors.textMuted, fontSize: 12, fontWeight: '500' },
-  actionBtn: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
-  actionBtnText: { fontSize: 12, fontWeight: 'bold', letterSpacing: 0.5 },
-  
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  emptyStateText: { color: Theme.colors.textMuted, fontSize: 14, fontStyle: 'italic' }
+  container:     { flex: 1, backgroundColor: Theme.colors.background },
+  header:        { padding: Theme.spacing.lg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitle:   { color: Theme.colors.text, fontSize: 20, fontWeight: 'bold' },
+  headerSub:     { color: Theme.colors.textMuted, fontSize: 12, marginTop: 2 },
+  liveBadge:     { flexDirection: 'row', alignItems: 'center', backgroundColor: Theme.colors.primaryDim, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 5 },
+  liveDot:       { width: 6, height: 6, borderRadius: 3, backgroundColor: Theme.colors.primary },
+  liveText:      { color: Theme.colors.primary, fontSize: 9, fontWeight: 'bold', letterSpacing: 1 },
+
+  listContent:   { paddingHorizontal: Theme.spacing.lg, paddingBottom: 32, gap: Theme.spacing.md },
+
+  card:          { backgroundColor: Theme.colors.surface, padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: Theme.colors.border, borderTopWidth: 3 },
+  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm },
+  headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  ipText:        { color: Theme.colors.text, fontSize: 15, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
+  badge:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
+  badgeText:     { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+
+  actionText:    { color: Theme.colors.textMuted, fontSize: 13, fontFamily: 'monospace', marginBottom: Theme.spacing.sm },
+
+  confRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: Theme.spacing.sm },
+  confBarBg:     { flex: 1, height: 4, backgroundColor: Theme.colors.border, borderRadius: 2, overflow: 'hidden' },
+  confBarFill:   { height: 4, borderRadius: 2 },
+  confLabel:     { fontSize: 10, fontWeight: 'bold', width: 52, textAlign: 'right' },
+
+  cardBottom:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Theme.spacing.sm },
+  cardTime:      { color: Theme.colors.textMuted, fontSize: 11 },
+  actionBtn:     { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
+  actionBtnText: { fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 },
+
+  emptyState:    { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, gap: 10 },
+  emptyText:     { color: Theme.colors.textMuted, fontSize: 16, fontWeight: 'bold' },
+  emptySubText:  { color: Theme.colors.textMuted, fontSize: 12 },
 });

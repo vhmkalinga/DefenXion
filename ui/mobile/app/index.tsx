@@ -1,27 +1,13 @@
 import React, { useState } from 'react';
 import { 
   View, Text, StyleSheet, TextInput, TouchableOpacity, 
-  ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Dimensions
+  ActivityIndicator, Alert, KeyboardAvoidingView, Platform
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import Theme from '../constants/theme';
-import Constants from 'expo-constants';
-
-const { width } = Dimensions.get('window');
-
-// IP RESOLUTION
-const getHostUrl = () => {
-  let host = 'localhost';
-  if (Constants.expoConfig?.hostUri) {
-    host = Constants.expoConfig.hostUri.split(':')[0];
-  }
-  return host;
-};
-
-const hostIp = getHostUrl();
-const API_BASE_URL = `http://${hostIp}:8000`;
+import { login, BASE_URL } from '../constants/api';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -38,34 +24,16 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      const formData = new URLSearchParams();
-      // Our backend expects 'username' according to OAuth2 password request
-      formData.append('username', email);
-      formData.append('password', password);
-
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: formData.toString(),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.access_token) {
-        // Simple mock JWT passing for prototype
-        const role = email.toLowerCase().includes('staff') ? 'Staff' : 'Admin';
-        
-        // Pushing to tabs
-        router.replace('/(tabs)');
-      } else {
-        Alert.alert('Access Denied', data.detail || 'Invalid secure credentials.');
-      }
+      // Uses api.ts login() which stores token + credentials for silent refresh
+      await login(email, password);
+      router.replace('/(tabs)');
     } catch (err) {
-      Alert.alert('Network Error', `Could not reach ${API_BASE_URL}. Ensure your computer server is running.`);
+      Alert.alert('Access Denied', `Could not authenticate. Ensure the server is running.\n${BASE_URL}`);
     } finally {
       setLoading(false);
     }
   };
+
 
   return (
     <SafeAreaView style={styles.container}>

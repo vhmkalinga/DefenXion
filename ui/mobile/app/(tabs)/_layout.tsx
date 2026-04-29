@@ -2,9 +2,14 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Theme from '../../constants/theme';
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+
+  // Dynamically account for Android gesture/button nav bar height
+  const tabBarHeight = (Platform.OS === 'ios' ? 60 : 56) + insets.bottom;
 
   return (
     <Tabs
@@ -16,16 +21,17 @@ export default function TabLayout() {
           backgroundColor: Theme.colors.surface,
           borderTopColor: Theme.colors.border,
           borderTopWidth: 1,
-          paddingBottom: Platform.OS === 'ios' ? 20 : 10,
+          height: tabBarHeight,
+          paddingBottom: insets.bottom + 4,
           paddingTop: 10,
-          height: Platform.OS === 'ios' ? 88 : 68,
         },
         tabBarLabelStyle: {
           fontSize: 10,
           fontWeight: 'bold',
-          marginTop: 4,
-        }
+          marginTop: 2,
+        },
       }}>
+
       <Tabs.Screen
         name="index"
         options={{
@@ -54,6 +60,9 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <Ionicons name="options-outline" size={24} color={color} />,
         }}
       />
+
+      {/* Hidden — Expo Router auto-registers all files in (tabs)/ */}
+      <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );
 }
