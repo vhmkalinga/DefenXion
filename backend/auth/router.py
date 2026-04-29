@@ -228,7 +228,50 @@ def logout(
 # ==================================================
 @router.get("/me")
 def get_me(current_user: dict = Depends(get_current_user)):
+    user = users_collection.find_one({"username": current_user["username"]}, {"_id": 0, "hashed_password": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
     return {
-        "username": current_user["username"],
-        "role": current_user["role"]
+        "username": user.get("username"),
+        "email": user.get("email"),
+        "role": user.get("role"),
+        "full_name": user.get("full_name", ""),
+        "phone": user.get("phone", ""),
+        "location": user.get("location", ""),
+        "avatar": user.get("avatar", ""),
+        "member_since": user.get("created_at", datetime.utcnow().strftime("%B %Y")) if isinstance(user.get("created_at"), str) else (user.get("created_at").strftime("%B %Y") if user.get("created_at") else datetime.utcnow().strftime("%B %Y"))
     }
+
+
+class UpdateProfileRequest(BaseModel):
+    full_name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+    location: str | None = None
+    avatar: str | None = None
+
+
+@router.put("/me")
+def update_me(data: UpdateProfileRequest, current_user: dict = Depends(get_current_user)):
+    update_data = {}
+    if data.full_name is not None:
+        update_data["full_name"] = data.full_name
+    if data.email is not None:
+        update_data["email"] = data.email
+    if data.phone is not None:
+        update_data["phone"] = data.phone
+    if data.location is not None:
+        update_data["location"] = data.location
+    if data.avatar is not None:
+        update_data["avatar"] = data.avatar
+
+    if not update_data:
+        return {"message": "No fields to update"}
+
+    users_collection.update_one(
+        {"username": current_user["username"]},
+        {"$set": update_data}
+    )
+    
+    return {"message": "Profile updated successfully"}

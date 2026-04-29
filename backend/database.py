@@ -17,8 +17,9 @@ logs_collection = db["logs"]
 # Additional security collections
 refresh_tokens_collection = db["refresh_tokens"]
 token_blacklist_collection = db["token_blacklist"]
-# ML model registry
+# ML model registry & data
 trained_models_collection = db["trained_models"]
+captured_traffic_collection = db["captured_traffic"]
 # Active Defense collections
 defense_modules_collection = db["defense_modules"]
 firewall_rules_collection = db["firewall_rules"]
