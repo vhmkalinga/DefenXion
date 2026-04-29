@@ -29,10 +29,10 @@ import { Settings } from "./components/pages/Settings";
 import { Profile } from "./components/pages/Profile";
 
 import { Login } from "./components/auth/Login";
-import { Signup } from "./components/auth/Signup";
 import { MobileLogin } from "./components/auth/MobileLogin";
 
 import { ThreatNotificationSystem } from "./components/ThreatNotificationSystem";
+import { SecurityCopilot } from "./components/SecurityCopilot";
 import { getDashboardStats } from "./services/api";
 import { useTheme } from "./context/ThemeContext";
 import { AnalyticsProvider } from "./context/AnalyticsContext";
@@ -87,6 +87,22 @@ export default function App() {
   }, []);
 
   // =========================
+  // Copilot Navigation
+  // =========================
+  useEffect(() => {
+    const handleCopilotNav = (e: Event) => {
+      const page = (e as CustomEvent).detail as string;
+      // page is a key like "threats", "reports", "defense", "settings", "model", "analytics"
+      const validPages = ["threats", "reports", "defense", "settings", "model", "analytics", "profile", "dashboard"];
+      if (validPages.includes(page)) {
+        setActiveItem(page);
+      }
+    };
+    window.addEventListener('copilot-navigate', handleCopilotNav);
+    return () => window.removeEventListener('copilot-navigate', handleCopilotNav);
+  }, []);
+
+  // =========================
   // Check Token On Load
   // =========================
   useEffect(() => {
@@ -114,48 +130,15 @@ export default function App() {
       return (
         <MobileLogin
           onLogin={() => setIsAuthenticated(true)}
-          onSwitchToSignup={() => setAuthView("signup")}
         />
       );
     }
 
-    if (authView === "login") {
-      return (
-        <Login
-          onLogin={() => setIsAuthenticated(true)}
-          onSwitchToSignup={() => setAuthView("signup")}
-          onForgotPassword={() => setAuthView("forgot")}
-        />
-      );
-    }
-
-    if (authView === "signup") {
-      return (
-        <Signup
-          onSignup={() => setIsAuthenticated(true)}
-          onSwitchToLogin={() => setAuthView("login")}
-        />
-      );
-    }
-
-    if (authView === "forgot") {
-      return (
-        <div className="min-h-screen flex items-center justify-center bg-[#0D1117] text-[#E6EDF3]">
-          <div className="bg-[#161B22] p-8 rounded-xl border border-[#30363D] text-center">
-            <h2 className="text-xl mb-4">Reset Password</h2>
-            <p className="text-[#7D8590] mb-6">
-              Password reset feature coming soon.
-            </p>
-            <button
-              className="text-[#58A6FF]"
-              onClick={() => setAuthView("login")}
-            >
-              Back to Login
-            </button>
-          </div>
-        </div>
-      );
-    }
+    return (
+      <Login
+        onLogin={() => setIsAuthenticated(true)}
+      />
+    );
   }
 
   // =========================
@@ -182,6 +165,7 @@ export default function App() {
         </div>
 
         <ThreatNotificationSystem />
+        <SecurityCopilot />
         <Toaster position="bottom-right" />
       </>
     );
@@ -277,6 +261,7 @@ export default function App() {
       </div>
 
       <ThreatNotificationSystem />
+      <SecurityCopilot />
       <Toaster position="bottom-right" />
     </AnalyticsProvider>
   );

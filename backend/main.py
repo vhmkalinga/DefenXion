@@ -56,6 +56,7 @@ app.add_middleware(
 # Backend Imports (Absolute)
 # --------------------------------------------------
 from backend.auth.router import router as auth_router
+from backend.chat.router import router as chat_router
 from backend.auth.dependencies import get_current_user, require_admin
 from backend.auth.security import hash_password, verify_password
 from backend.database import (
@@ -74,6 +75,7 @@ from backend.database import (
 from backend.defenxion_response_engine import handle_event
 
 app.include_router(auth_router)
+app.include_router(chat_router)
 
 # --------------------------------------------------
 # Load ML Model (lazy – loaded on first use)
@@ -1216,6 +1218,9 @@ def create_user(
     if user.role not in ["admin", "user"]:
         raise HTTPException(status_code=400, detail="Invalid role")
 
+    if len(user.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+
     users_collection.insert_one({
         "username": user.username,
         "email": user.email,
@@ -1224,6 +1229,36 @@ def create_user(
     })
 
     return {"message": "User created successfully"}
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+# --------------------------------------------------
+# Admin-Only: Reset User Password
+# --------------------------------------------------
+@app.post("/users/{username}/reset-password")
+def reset_user_password(
+    username: str,
+    data: ResetPasswordRequest,
+    admin: dict = Depends(require_admin)
+):
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+
+    user = users_collection.find_one({"username": username})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    users_collection.update_one(
+        {"username": username},
+        {"$set": {"hashed_password": hash_password(data.new_password)}}
+    )
+
+    from backend.database import refresh_tokens_collection
+    refresh_tokens_collection.delete_many({"username": username})
+
+    return {"message": f"Password for {username} has been reset successfully"}
 
 
 # --------------------------------------------------

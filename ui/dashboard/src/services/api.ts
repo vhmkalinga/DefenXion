@@ -332,6 +332,11 @@ export const deleteUser = async (username: string) => {
   return response.data;
 };
 
+export const adminResetPassword = async (username: string, newPassword: string) => {
+  const response = await api.post(`/users/${username}/reset-password`, { new_password: newPassword });
+  return response.data;
+};
+
 // ── Profile ──
 export const getMe = async () => {
   const response = await api.get("/auth/me");
@@ -340,6 +345,12 @@ export const getMe = async () => {
 
 export const updateMe = async (data: { full_name?: string; email?: string; phone?: string; location?: string; avatar?: string }) => {
   const response = await api.put("/auth/me", data);
+  return response.data;
+};
+
+// ── Security Copilot ──
+export const sendChatMessage = async (message: string) => {
+  const response = await api.post("/chat", { message });
   return response.data;
 };
 
