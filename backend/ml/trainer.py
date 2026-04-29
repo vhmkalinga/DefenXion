@@ -23,11 +23,11 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import LinearSVC
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATASET_DIR = os.path.join(BASE_DIR, "datasets", "CICIDS2017")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
 
 # ── Algorithm registry ─────────────────────────────────────
@@ -90,13 +90,15 @@ ALGORITHM_MAP = {
 
 def train_model(
     algorithm: str = "random_forest",
+    dataset_name: str = "CICIDS2017",
     n_estimators: int = 100,
     max_depth: int | None = None,
     sample_size: int = 50000,
     test_sample_size: int = 10000,
+    live_data: list = None,
 ) -> dict:
     """
-    Train a classifier on the CICIDS2017 dataset.
+    Train a classifier on the selected dataset.
 
     Args:
         algorithm: Key from ALGORITHM_MAP.
@@ -117,10 +119,31 @@ def train_model(
     prefix = algo_info["prefix"]
 
     # ── Load data ──────────────────────────────────────────────
-    X_train_full = pd.read_csv(os.path.join(DATASET_DIR, "X_train.csv"))
-    y_train_full = pd.read_csv(os.path.join(DATASET_DIR, "y_train.csv")).values.ravel()
-    X_test_full = pd.read_csv(os.path.join(DATASET_DIR, "X_test.csv"))
-    y_test_full = pd.read_csv(os.path.join(DATASET_DIR, "y_test.csv")).values.ravel()
+    dataset_dir = os.path.join(BASE_DIR, "datasets", dataset_name)
+    if not os.path.exists(dataset_dir):
+        raise FileNotFoundError(f"Dataset directory not found: {dataset_dir}")
+        
+    X_train_full = pd.read_csv(os.path.join(dataset_dir, "X_train.csv"))
+    y_train_full = pd.read_csv(os.path.join(dataset_dir, "y_train.csv")).values.ravel()
+    X_test_full = pd.read_csv(os.path.join(dataset_dir, "X_test.csv"))
+    y_test_full = pd.read_csv(os.path.join(dataset_dir, "y_test.csv")).values.ravel()
+
+    # ── Online Learning: Merge Live Captured Data ──────────────
+    if live_data and len(live_data) > 0:
+        df_live = pd.DataFrame(live_data)
+        if "Label" in df_live.columns:
+            y_live = df_live.pop("Label").values
+            
+            # Align columns: Keep only features present in baseline, fill missing with 0
+            df_live_aligned = pd.DataFrame(columns=X_train_full.columns)
+            for col in X_train_full.columns:
+                if col in df_live.columns:
+                    df_live_aligned[col] = df_live[col]
+                else:
+                    df_live_aligned[col] = 0.0
+                    
+            X_train_full = pd.concat([X_train_full, df_live_aligned], ignore_index=True)
+            y_train_full = np.concatenate([y_train_full, y_live])
 
     # ── Stratified sample for training ─────────────────────────
     if sample_size < len(X_train_full):
@@ -161,6 +184,31 @@ def train_model(
     rec = round(recall_score(y_test, y_pred, zero_division=0) * 100, 2)
     f1 = round(f1_score(y_test, y_pred, zero_division=0) * 100, 2)
 
+    # ── Per-Class Accuracy ─────────────────────────────────────
+    cm = confusion_matrix(y_test, y_pred)
+    threat_detection_accuracy = []
+    if cm.shape == (2, 2):
+        acc_normal = round((cm[0,0] / sum(cm[0])) * 100, 2) if sum(cm[0]) > 0 else 0
+        acc_attack = round((cm[1,1] / sum(cm[1])) * 100, 2) if sum(cm[1]) > 0 else 0
+        threat_detection_accuracy = [
+            {"category": "Normal Traffic", "accuracy": acc_normal},
+            {"category": "Attack Traffic", "accuracy": acc_attack}
+        ]
+
+    # ── Feature Importance ─────────────────────────────────────
+    feature_importances = []
+    if hasattr(clf, "feature_importances_"):
+        importance = clf.feature_importances_
+        indices = np.argsort(importance)[::-1][:10]  # top 10 features
+        columns = X_train.columns
+        for idx in indices:
+            # Map complex CICIDS feature names to shorter, more readable versions if possible
+            raw_name = str(columns[idx]).strip()
+            feature_importances.append({
+                "feature": raw_name[:25] + ".." if len(raw_name) > 25 else raw_name,
+                "importance": round(float(importance[idx]), 4)
+            })
+
     # ── Save model ─────────────────────────────────────────────
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     version = f"{prefix}_{timestamp}"
@@ -183,5 +231,7 @@ def train_model(
         "max_depth": max_depth,
         "sample_size": sample_size,
         "total_features": len(X_train.columns),
+        "feature_importances": feature_importances,
+        "threat_detection_accuracy": threat_detection_accuracy,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
