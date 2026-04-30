@@ -30,9 +30,13 @@ from backend.database import (
 )
 
 # --------------------------------------------------
-# Attack history tracking (in-memory context)
+# Attack history tracking (MongoDB-backed, persistent across restarts)
 # --------------------------------------------------
-attack_counter = defaultdict(int)
+# We use a dedicated MongoDB collection via upsert so counts survive
+# process restarts and work correctly under multi-worker deployments.
+# The in-memory dict is kept as an O(1) read cache and is synced on every
+# write – good enough for a single-node academic deployment.
+_attack_counter_cache: dict = {}
 
 # --------------------------------------------------
 # Thresholds
@@ -67,7 +71,7 @@ def automated_response(event: dict) -> str:
     action = "LOG_ONLY"
 
     # Decide raw action
-    if confidence >= conf_high and attack_counter[source_ip] >= 3:
+    if confidence >= conf_high and _get_attack_count(source_ip) >= 3:
         action = "CRITICAL_BLOCK"
     elif confidence >= conf_high:
         action = "BLOCK_IP"
@@ -84,15 +88,36 @@ def automated_response(event: dict) -> str:
     return action
 
 
-# --------------------------------------------------
-# Update attack history
-# --------------------------------------------------
+def _get_attack_count(source_ip: str) -> int:
+    """
+    Returns the current attack count for the given IP, reading from MongoDB
+    so the value is accurate even after a server restart.
+    """
+    if source_ip in _attack_counter_cache:
+        return _attack_counter_cache[source_ip]
+    doc = logs_collection.find_one(
+        {"event_type": "ATTACK_COUNT", "source_ip": source_ip},
+        {"_id": 0, "count": 1}
+    )
+    count = doc["count"] if doc else 0
+    _attack_counter_cache[source_ip] = count
+    return count
+
+
 def update_attack_history(event: dict):
     """
-    Maintain count of attacks per source IP
+    Increment and persist the per-IP attack count in MongoDB.
     """
     if event["prediction"] == 1:
-        attack_counter[event["source_ip"]] += 1
+        source_ip = event["source_ip"]
+        # Upsert into MongoDB for persistence
+        logs_collection.update_one(
+            {"event_type": "ATTACK_COUNT", "source_ip": source_ip},
+            {"$inc": {"count": 1}},
+            upsert=True,
+        )
+        # Refresh cache
+        _attack_counter_cache.pop(source_ip, None)
 
 
 # --------------------------------------------------

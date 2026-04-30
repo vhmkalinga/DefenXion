@@ -12,7 +12,8 @@ Features:
 - Pagination for Logs & Alerts
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, BackgroundTasks
+from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import json
@@ -34,6 +35,9 @@ app = FastAPI(
 # --------------------------------------------------
 # CORS Configuration
 # --------------------------------------------------
+# NOTE: The "*" wildcard is NOT allowed alongside allow_credentials=True per the
+# CORS specification – browsers will reject such responses. All allowed origins
+# are enumerated explicitly here.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -41,11 +45,6 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
-        "ws://localhost:3000",
-        "ws://127.0.0.1:3000",
-        "ws://localhost:5173",
-        "ws://127.0.0.1:5173",
-        "*"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -78,9 +77,24 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 
 # --------------------------------------------------
+# Global Exception Handler
+# --------------------------------------------------
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Catch-all for unhandled exceptions – prevents raw tracebacks from
+    leaking to API consumers and ensures every 500 response is JSON."""
+    import logging
+    logging.error(f"Unhandled exception on {request.method} {request.url}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal server error occurred. Please try again later."},
+    )
+
+# --------------------------------------------------
 # Load ML Model (lazy – loaded on first use)
 # --------------------------------------------------
 # ML Predictor is dynamically loaded from backend.ml.predictor
+rf_model = None
 
 # --------------------------------------------------
 # WebSocket Manager
