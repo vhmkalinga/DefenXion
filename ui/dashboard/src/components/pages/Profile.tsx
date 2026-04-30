@@ -1,390 +1,205 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Calendar, Shield, Award, Activity, Camera, Upload } from 'lucide-react';
-import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
-import { Button } from '../ui/button';
-import { Input } from '../ui/input';
+import { User, Mail, Phone, MapPin, Calendar, Shield, Award, Activity, Camera, Upload, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
-import { Badge } from '../ui/badge';
-import { Separator } from '../ui/separator';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { getMe, updateMe } from '../../services/api';
 
-const DEFAULT_AVATARS = ['admin', 'felix', 'aneka', 'jack', 'oliver', 'leo', 'salem', 'milo', 'cyber', 'shield', 'shadow', 'neon'];
-
-const activityHistory = [
-  { action: 'Generated security report', timestamp: '2 hours ago', type: 'report' },
-  { action: 'Updated firewall rules', timestamp: '5 hours ago', type: 'config' },
-  { action: 'Blocked DDoS attack', timestamp: '1 day ago', type: 'threat' },
-  { action: 'Trained AI model v3.2', timestamp: '3 days ago', type: 'model' },
-  { action: 'Added new team member', timestamp: '1 week ago', type: 'user' },
+const AVATARS = ['admin','felix','aneka','jack','oliver','leo','salem','milo','cyber','shield','shadow','neon'];
+const ACTIVITY = [
+  { action:'Generated security report', time:'2 hours ago', type:'report' },
+  { action:'Updated firewall rules', time:'5 hours ago', type:'config' },
+  { action:'Blocked DDoS attack', time:'1 day ago', type:'threat' },
+  { action:'Trained AI model v3.2', time:'3 days ago', type:'model' },
+  { action:'Added new team member', time:'1 week ago', type:'user' },
 ];
-
-const achievements = [
-  { title: 'Test Execution', description: 'Passed 1000+ threat scenarios', icon: Shield, color: '#FF4D4D' },
-  { title: 'Model Accuracy', description: 'Achieved 95% detection rate', icon: Award, color: '#FFA657' },
-  { title: 'Data Processing', description: 'Processed 50,000+ test packets', icon: Activity, color: '#58A6FF' },
+const ACHIEVE = [
+  { title:'Test Execution', desc:'Passed 1000+ threat scenarios', icon:Shield, color:'#FF4D4D' },
+  { title:'Model Accuracy', desc:'Achieved 95% detection rate', icon:Award, color:'#FFA657' },
+  { title:'Data Processing', desc:'Processed 50,000+ test packets', icon:Activity, color:'#58A6FF' },
 ];
+const TYPE_CLR:Record<string,string> = { threat:'#FF4D4D', config:'#FFA657', model:'#58A6FF', report:'#3FB950', user:'#7D8590' };
+const STATS = [{l:'Threats Blocked',v:'2,847',c:'#FF4D4D'},{l:'Reports Generated',v:'142',c:'#3FB950'},{l:'Models Trained',v:'12',c:'#58A6FF'},{l:'Active Days',v:'298',c:'#BC8CFF'}];
 
 export function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
-  const [profile, setProfile] = useState<any>({
-    username: '...',
-    role: '...',
-    full_name: '...',
-    email: '...',
-    phone: '...',
-    location: '...',
-    member_since: '...'
-  });
-  
-  const [formData, setFormData] = useState({
-    full_name: '',
-    email: '',
-    phone: '',
-    location: '',
-    avatar: ''
-  });
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
+  const [profile, setProfile] = useState<any>({ username:'...', role:'...', full_name:'...', email:'...', phone:'...', location:'...', member_since:'...' });
+  const [form, setForm] = useState({ full_name:'', email:'', phone:'', location:'', avatar:'' });
 
-  useEffect(() => {
-    getMe().then(data => {
-      setProfile(data);
-      setFormData({
-        full_name: data.full_name || '',
-        email: data.email || '',
-        phone: data.phone || '',
-        location: data.location || '',
-        avatar: data.avatar || ''
-      });
-    }).catch(err => console.error("Failed to fetch profile", err));
-  }, []);
+  useEffect(() => { getMe().then(d => { setProfile(d); setForm({ full_name:d.full_name||'', email:d.email||'', phone:d.phone||'', location:d.location||'', avatar:d.avatar||'' }); }).catch(console.error); }, []);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 2 * 1024 * 1024) { // 2MB limit
-        toast.error('Image is too large (max 2MB)');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData(prev => ({ ...prev, avatar: reader.result as string }));
-        setIsAvatarModalOpen(false);
-      };
-      reader.readAsDataURL(file);
-    }
+    const f = e.target.files?.[0]; if (!f) return;
+    if (f.size > 2*1024*1024) { toast.error('Max 2MB'); return; }
+    const r = new FileReader(); r.onloadend = () => { setForm(p=>({...p, avatar:r.result as string})); setShowAvatarModal(false); }; r.readAsDataURL(f);
   };
+  const selectAvatar = (s:string) => { setForm(p=>({...p, avatar:`https://api.dicebear.com/7.x/avataaars/svg?seed=${s}`})); setShowAvatarModal(false); };
+  const handleSave = async () => { setIsSaving(true); try { await updateMe(form); setProfile((p:any)=>({...p,...form})); setIsEditing(false); window.dispatchEvent(new Event('profileUpdated')); toast.success('Saved!'); } catch { toast.error('Failed'); } finally { setIsSaving(false); } };
+  const cancel = () => { setIsEditing(false); setForm({ full_name:profile.full_name||'', email:profile.email||'', phone:profile.phone||'', location:profile.location||'', avatar:profile.avatar||'' }); };
 
-  const selectDefaultAvatar = (seed: string) => {
-    setFormData(prev => ({ ...prev, avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}` }));
-    setIsAvatarModalOpen(false);
-  };
+  const C:React.CSSProperties = { background:'linear-gradient(135deg,#161B22,#1a1f28)', border:'1px solid #21262D', borderRadius:16 };
+  const I:React.CSSProperties = { width:'100%', background:'rgba(13,17,23,0.8)', border:'1px solid #30363D', borderRadius:8, padding:'8px 12px', color:'#E6EDF3', fontSize:13, outline:'none', fontFamily:'inherit', boxSizing:'border-box' };
+  const L:React.CSSProperties = { color:'#7D8590', fontSize:12, marginBottom:6, display:'flex', alignItems:'center', gap:6 };
+  const avatarUrl = form.avatar || profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username||'admin'}`;
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await updateMe(formData);
-      setProfile((prev: any) => ({ ...prev, ...formData }));
-      setIsEditing(false);
-      window.dispatchEvent(new Event('profileUpdated'));
-      toast.success('Profile updated successfully');
-    } catch (error) {
-      toast.error('Failed to update profile');
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  return (<>
+    <style>{`@keyframes pf{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@keyframes ps{to{transform:rotate(360deg)}}.pr{animation:pf .35s ease both}.pr:nth-child(2){animation-delay:.06s}.pr:nth-child(3){animation-delay:.12s}.pr:nth-child(4){animation-delay:.18s}`}</style>
+    <div style={{ padding:'28px 32px', maxWidth:1440, margin:'0 auto' }}>
 
-  return (
-    <div className="p-8 max-w-[1400px] mx-auto">
-      <h2 className="text-[#E6EDF3] mb-8">Profile</h2>
+      {/* Header */}
+      <div className="pr" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
+        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+          <div style={{ width:44, height:44, borderRadius:14, background:'linear-gradient(135deg,#3FB950,#2ea043)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 6px 20px rgba(63,185,80,0.3)' }}><User size={22} color="white"/></div>
+          <div><h1 style={{ color:'#E6EDF3', fontSize:22, fontWeight:700, letterSpacing:'-0.02em', margin:0 }}>Profile</h1><p style={{ color:'#7D8590', fontSize:13, marginTop:3 }}>Manage your account details</p></div>
+        </div>
+        <div style={{ display:'flex', gap:8 }}>
+          {isEditing ? (<>
+            <button onClick={cancel} disabled={isSaving} style={{ padding:'8px 16px', borderRadius:8, background:'none', border:'1px solid #30363D', color:'#7D8590', fontSize:12, fontWeight:600, fontFamily:'inherit', cursor:'pointer' }}>Cancel</button>
+            <button onClick={handleSave} disabled={isSaving} style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 16px', borderRadius:8, border:'none', background:'linear-gradient(135deg,#1F6FEB,#2679f5)', color:'white', fontSize:12, fontWeight:600, fontFamily:'inherit', cursor:isSaving?'not-allowed':'pointer', boxShadow:'0 4px 12px rgba(31,111,235,0.3)' }}>
+              {isSaving?<Loader2 size={14} style={{ animation:'ps .8s linear infinite' }}/>:null} {isSaving?'Saving…':'Save Profile'}
+            </button>
+          </>) : (
+            <button onClick={()=>setIsEditing(true)} style={{ padding:'8px 16px', borderRadius:8, background:'rgba(255,255,255,0.04)', border:'1px solid #30363D', color:'#E6EDF3', fontSize:12, fontWeight:600, fontFamily:'inherit', cursor:'pointer' }}>Edit Profile</button>
+          )}
+        </div>
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-            <div className="flex items-start gap-6 mb-6">
-              <div className="relative group shrink-0">
-                <Avatar className="w-24 h-24 border border-[#30363D]">
-                  <AvatarImage src={formData.avatar || profile.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username || 'admin'}`} />
-                  <AvatarFallback className="bg-[#0D1117] text-[#E6EDF3] text-2xl">
-                    {profile.full_name?.charAt(0) || profile.username?.charAt(0) || 'U'}
-                  </AvatarFallback>
-                </Avatar>
-                {isEditing && (
-                  <button 
-                    onClick={() => setIsAvatarModalOpen(true)}
-                    className="absolute inset-0 flex flex-col items-center justify-center bg-black/60 rounded-full cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity backdrop-blur-[2px]" 
-                    title="Change Avatar"
-                  >
-                    <Camera className="w-5 h-5 text-white mb-1" />
-                    <span className="text-[10px] text-white font-medium uppercase tracking-wider">Change</span>
-                  </button>
-                )}
-              </div>
-              <div className="flex-1">
-                <h3 className="text-[#E6EDF3] mb-2">{profile.full_name || profile.username}</h3>
-                <p className="text-[#7D8590] mb-4 capitalize">{profile.role}</p>
-                <div className="flex gap-2">
-                  <Badge variant="outline" className="border-[#3FB950] text-[#3FB950]">
-                    Active
-                  </Badge>
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:20 }}>
+        {/* Left Column */}
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Profile Card */}
+          <div className="pr" style={{ ...C, padding:'24px 28px', position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:0, left:0, right:0, height:80, background:'linear-gradient(135deg,rgba(31,111,235,0.15),rgba(63,185,80,0.1))', pointerEvents:'none' }}/>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:20, position:'relative', zIndex:1, marginBottom:20 }}>
+              {/* Avatar */}
+              <div style={{ position:'relative', flexShrink:0 }}>
+                <div style={{ width:88, height:88, borderRadius:'50%', border:'3px solid #21262D', overflow:'hidden', background:'#0D1117' }}>
+                  <img src={avatarUrl} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
                 </div>
+                {isEditing && <button onClick={()=>setShowAvatarModal(true)} style={{ position:'absolute', inset:0, borderRadius:'50%', background:'rgba(0,0,0,0.6)', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', opacity:0, transition:'opacity 0.2s' }} onMouseEnter={e=>(e.currentTarget.style.opacity='1')} onMouseLeave={e=>(e.currentTarget.style.opacity='0')}><Camera size={16} color="white"/><span style={{ color:'white', fontSize:9, fontWeight:600, marginTop:2 }}>CHANGE</span></button>}
               </div>
-              {isEditing ? (
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    className="border-[#30363D] text-[#7D8590]"
-                    onClick={() => {
-                      setIsEditing(false);
-                      setFormData({
-                        full_name: profile.full_name || '',
-                        email: profile.email || '',
-                        phone: profile.phone || '',
-                        location: profile.location || '',
-                        avatar: profile.avatar || ''
-                      });
-                    }}
-                    disabled={isSaving}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    className="bg-[#1F6FEB] text-white hover:bg-[#1F6FEB]/90"
-                    onClick={handleSave}
-                    disabled={isSaving}
-                  >
-                    {isSaving ? 'Saving...' : 'Save Profile'}
-                  </Button>
-                </div>
-              ) : (
-                <Button
-                  variant="outline"
-                  className="border-[#30363D] text-[#E6EDF3]"
-                  onClick={() => setIsEditing(true)}
-                >
-                  Edit Profile
-                </Button>
-              )}
+              <div style={{ flex:1 }}>
+                <div style={{ color:'#E6EDF3', fontSize:18, fontWeight:700 }}>{profile.full_name||profile.username}</div>
+                <div style={{ color:'#7D8590', fontSize:13, textTransform:'capitalize', marginTop:2 }}>{profile.role}</div>
+                <div style={{ marginTop:8 }}><span style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:600, color:'#3FB950', background:'rgba(63,185,80,0.1)', border:'1px solid rgba(63,185,80,0.25)' }}>Active</span></div>
+              </div>
             </div>
-
-            <Separator className="bg-[#30363D] mb-6" />
-
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[#C9D1D9] text-sm mb-2 block flex items-center gap-2">
-                    <User className="w-4 h-4" />
-                    Full Name
-                  </label>
-                  <Input
-                    value={formData.full_name}
-                    onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                    disabled={!isEditing}
-                    className="bg-[#0D1117] border-[#30363D] text-[#E6EDF3] disabled:opacity-75 disabled:cursor-not-allowed"
-                    placeholder="Enter full name"
-                  />
+            {/* Form Fields */}
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+              {[
+                { icon:User, label:'Full Name', key:'full_name', ph:'Enter full name' },
+                { icon:Mail, label:'Email', key:'email', ph:'Enter email', type:'email' },
+                { icon:Phone, label:'Phone', key:'phone', ph:'Enter phone' },
+                { icon:MapPin, label:'Location', key:'location', ph:'Enter location' },
+              ].map(f => (
+                <div key={f.key}>
+                  <div style={L}><f.icon size={12}/> {f.label}</div>
+                  <input type={f.type||'text'} value={(form as any)[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} disabled={!isEditing} placeholder={f.ph} style={{ ...I, opacity:isEditing?1:0.7, cursor:isEditing?'text':'not-allowed' }}/>
                 </div>
-                <div>
-                  <label className="text-[#C9D1D9] text-sm mb-2 block flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
-                    Email Address
-                  </label>
-                  <Input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    disabled={!isEditing}
-                    className="bg-[#0D1117] border-[#30363D] text-[#E6EDF3] disabled:opacity-75 disabled:cursor-not-allowed"
-                    placeholder="Enter email address"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[#C9D1D9] text-sm mb-2 block flex items-center gap-2">
-                    <Phone className="w-4 h-4" />
-                    Phone Number
-                  </label>
-                  <Input
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    disabled={!isEditing}
-                    className="bg-[#0D1117] border-[#30363D] text-[#E6EDF3] disabled:opacity-75 disabled:cursor-not-allowed"
-                    placeholder="Enter phone number"
-                  />
-                </div>
-                <div>
-                  <label className="text-[#C9D1D9] text-sm mb-2 block flex items-center gap-2">
-                    <MapPin className="w-4 h-4" />
-                    Location
-                  </label>
-                  <Input
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    disabled={!isEditing}
-                    className="bg-[#0D1117] border-[#30363D] text-[#E6EDF3] disabled:opacity-75 disabled:cursor-not-allowed"
-                    placeholder="Enter location"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-[#C9D1D9] text-sm mb-2 block flex items-center gap-2">
-                  <Calendar className="w-4 h-4" />
-                  Member Since
-                </label>
-                <Input
-                  value={profile.member_since}
-                  disabled
-                  className="bg-[#0D1117] border-[#30363D] text-[#7D8590] disabled:opacity-100 disabled:cursor-not-allowed"
-                />
+              ))}
+              <div style={{ gridColumn:'1/-1' }}>
+                <div style={L}><Calendar size={12}/> Member Since</div>
+                <input value={profile.member_since} disabled style={{ ...I, opacity:0.5, cursor:'not-allowed' }}/>
               </div>
             </div>
           </div>
 
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-            <h3 className="text-[#E6EDF3] mb-6">Recent Activity</h3>
-            <div className="space-y-4">
-              {activityHistory.map((activity, index) => (
-                <div key={index} className="flex items-start gap-4 pb-4 border-b border-[#30363D] last:border-0 last:pb-0">
-                  <div className={`w-2 h-2 rounded-full mt-2 ${activity.type === 'threat' ? 'bg-[#FF4D4D]' :
-                      activity.type === 'config' ? 'bg-[#FFA657]' :
-                        activity.type === 'model' ? 'bg-[#58A6FF]' :
-                          activity.type === 'report' ? 'bg-[#3FB950]' :
-                            'bg-[#7D8590]'
-                    }`} />
-                  <div className="flex-1">
-                    <div className="text-[#E6EDF3]">{activity.action}</div>
-                    <div className="text-[#7D8590] text-sm mt-1">{activity.timestamp}</div>
-                  </div>
+          {/* Activity */}
+          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Recent Activity</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {ACTIVITY.map((a,i) => (
+                <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 12px', borderRadius:8, background:'rgba(13,17,23,0.4)', border:'1px solid transparent', transition:'border-color 0.15s' }} onMouseEnter={e=>(e.currentTarget.style.borderColor='#21262D')} onMouseLeave={e=>(e.currentTarget.style.borderColor='transparent')}>
+                  <div style={{ width:8, height:8, borderRadius:'50%', marginTop:5, background:TYPE_CLR[a.type]||'#7D8590', boxShadow:`0 0 8px ${TYPE_CLR[a.type]||'#7D8590'}40`, flexShrink:0 }}/>
+                  <div style={{ flex:1 }}><div style={{ color:'#E6EDF3', fontSize:13 }}>{a.action}</div><div style={{ color:'#484F58', fontSize:11, marginTop:2 }}>{a.time}</div></div>
                 </div>
               ))}
             </div>
           </div>
         </div>
 
-        <div className="space-y-6">
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-            <h3 className="text-[#E6EDF3] mb-6">Recent Login Activity</h3>
-            <div className="space-y-4">
-              {profile.login_history && profile.login_history.length > 0 ? (
-                [...profile.login_history].reverse().map((login: any, index: number) => (
-                  <div key={index} className="flex items-start gap-4 pb-4 border-b border-[#30363D] last:border-0 last:pb-0">
-                    <div className="w-2 h-2 rounded-full mt-2 bg-[#1F6FEB]" />
-                    <div className="flex-1">
-                      <div className="text-[#E6EDF3] font-mono text-sm">{login.ip}</div>
-                      <div className="text-[#7D8590] text-xs mt-1">
-                        {new Date(login.timestamp).toLocaleString()}
-                      </div>
-                    </div>
+        {/* Right Column */}
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          {/* Login History */}
+          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Login History</div>
+            {profile.login_history?.length > 0 ? (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {[...profile.login_history].reverse().map((l:any,i:number) => (
+                  <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:'8px 10px', borderRadius:6, background:'rgba(13,17,23,0.4)' }}>
+                    <div style={{ width:6, height:6, borderRadius:'50%', marginTop:5, background:'#1F6FEB', flexShrink:0 }}/>
+                    <div><div style={{ color:'#E6EDF3', fontFamily:'monospace', fontSize:12 }}>{l.ip}</div><div style={{ color:'#484F58', fontSize:10, marginTop:2 }}>{new Date(l.timestamp).toLocaleString()}</div></div>
                   </div>
-                ))
-              ) : (
-                <div className="text-[#7D8590] text-sm">No recent login activity.</div>
-              )}
-            </div>
+                ))}
+              </div>
+            ) : <div style={{ color:'#484F58', fontSize:12 }}>No recent logins</div>}
           </div>
 
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-            <h3 className="text-[#E6EDF3] mb-6">Achievements</h3>
-            <div className="space-y-4">
-              {achievements.map((achievement, index) => (
-                <div key={index} className="bg-[#0D1117] border border-[#30363D] rounded-xl p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="p-2 rounded-lg" style={{ backgroundColor: `${achievement.color}20` }}>
-                      <achievement.icon className="w-5 h-5" style={{ color: achievement.color }} />
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-[#E6EDF3] mb-1">{achievement.title}</div>
-                      <div className="text-[#7D8590] text-sm">{achievement.description}</div>
-                    </div>
-                  </div>
+          {/* Achievements */}
+          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Achievements</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {ACHIEVE.map((a,i) => (
+                <div key={i} style={{ background:'rgba(13,17,23,0.5)', border:'1px solid #21262D', borderRadius:10, padding:'12px 14px', display:'flex', alignItems:'flex-start', gap:10, position:'relative', overflow:'hidden' }}>
+                  <div style={{ position:'absolute', top:-10, right:-10, width:40, height:40, borderRadius:'50%', background:`radial-gradient(circle,${a.color}15,transparent)`, pointerEvents:'none' }}/>
+                  <div style={{ padding:7, borderRadius:8, background:`${a.color}15` }}><a.icon size={16} color={a.color}/></div>
+                  <div><div style={{ color:'#E6EDF3', fontSize:13, fontWeight:500 }}>{a.title}</div><div style={{ color:'#7D8590', fontSize:11, marginTop:2 }}>{a.desc}</div></div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-            <h3 className="text-[#E6EDF3] mb-6">Statistics</h3>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-[#30363D]">
-                <span className="text-[#7D8590]">Threats Blocked</span>
-                <span className="text-[#E6EDF3]">2,847</span>
-              </div>
-              <div className="flex items-center justify-between pb-3 border-b border-[#30363D]">
-                <span className="text-[#7D8590]">Reports Generated</span>
-                <span className="text-[#E6EDF3]">142</span>
-              </div>
-              <div className="flex items-center justify-between pb-3 border-b border-[#30363D]">
-                <span className="text-[#7D8590]">Models Trained</span>
-                <span className="text-[#E6EDF3]">12</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[#7D8590]">Active Days</span>
-                <span className="text-[#E6EDF3]">298</span>
-              </div>
+          {/* Stats */}
+          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Statistics</div>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {STATS.map((s,i) => (
+                <div key={i} style={{ background:'rgba(13,17,23,0.5)', borderRadius:10, padding:'12px 14px', border:'1px solid #21262D', position:'relative', overflow:'hidden' }}>
+                  <div style={{ position:'absolute', top:-12, right:-12, width:36, height:36, borderRadius:'50%', background:`radial-gradient(circle,${s.c}18,transparent)`, pointerEvents:'none' }}/>
+                  <div style={{ color:'#7D8590', fontSize:10, marginBottom:4 }}>{s.l}</div>
+                  <div style={{ color:s.c, fontSize:18, fontWeight:700, fontFamily:'monospace' }}>{s.v}</div>
+                </div>
+              ))}
             </div>
           </div>
 
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D]">
-            <h3 className="text-[#E6EDF3] mb-4">Project Details</h3>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[#7D8590]">Course</span>
-                <span className="text-[#58A6FF]">Computer Science</span>
+          {/* Project */}
+          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Project Details</div>
+            {[{l:'Course',v:'Computer Science',c:'#58A6FF'},{l:'Module',v:'Final Year Project',c:'#E6EDF3'},{l:'Status',v:'Prototype',c:'#3FB950'}].map((p,i)=>(
+              <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:i<2?'1px solid #21262D':'none' }}>
+                <span style={{ color:'#7D8590', fontSize:12 }}>{p.l}</span><span style={{ color:p.c, fontSize:12, fontWeight:500 }}>{p.v}</span>
               </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[#7D8590]">Module</span>
-                <span className="text-[#E6EDF3]">Final Year Project</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-[#7D8590]">Status</span>
-                <span className="text-[#E6EDF3]">Prototype</span>
-              </div>
-            </div>
+            ))}
           </div>
         </div>
       </div>
 
-      <Dialog open={isAvatarModalOpen} onOpenChange={setIsAvatarModalOpen}>
-        <DialogContent 
-          className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]"
-          style={{ position: 'fixed', inset: 0, margin: 'auto', width: '90%', maxWidth: '425px', height: 'fit-content', maxHeight: '85vh', overflowY: 'auto', zIndex: 99999, borderRadius: '12px' }}
-        >
-          <DialogHeader>
-            <DialogTitle>Choose Avatar</DialogTitle>
-            <DialogDescription className="text-[#7D8590]">
-              Select a predefined avatar or upload your own image.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-4 py-4 justify-items-center" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '16px', justifyItems: 'center', padding: '16px 0' }}>
-            {DEFAULT_AVATARS.map((seed) => (
-              <button
-                key={seed}
-                onClick={() => selectDefaultAvatar(seed)}
-                className="relative rounded-full overflow-hidden border-2 border-transparent hover:border-[#1F6FEB] transition-colors group shrink-0"
-                style={{ width: '64px', height: '64px', borderRadius: '50%', flexShrink: 0 }}
-              >
-                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}`} alt={seed} style={{ width: '100%', height: '100%', objectFit: 'cover', backgroundColor: '#0D1117' }} />
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors" style={{ position: 'absolute', inset: 0 }} />
-              </button>
-            ))}
-          </div>
-          
-          <div className="pt-2 pb-4">
-            <label className="flex items-center justify-center w-full gap-2 px-4 py-3 border border-dashed border-[#30363D] rounded-xl cursor-pointer hover:bg-[#1E232B] transition-all" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', gap: '8px', padding: '12px 16px', border: '1px dashed #30363D', borderRadius: '12px', cursor: 'pointer' }}>
-              <Upload className="w-5 h-5 text-[#7D8590]" style={{ width: '20px', height: '20px', color: '#7D8590' }} />
-              <span className="text-[#E6EDF3]" style={{ color: '#E6EDF3' }}>Upload custom image</span>
-              <input type="file" accept="image/*" style={{ display: 'none', width: 0, height: 0, opacity: 0 }} onChange={handleAvatarChange} />
+      {/* Avatar Modal */}
+      {showAvatarModal && (
+        <div style={{ position:'fixed', inset:0, zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', backdropFilter:'blur(4px)' }} onClick={()=>setShowAvatarModal(false)}>
+          <div onClick={e=>e.stopPropagation()} style={{ ...C, padding:'24px 28px', width:420, maxHeight:'85vh', overflowY:'auto' }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+              <div style={{ color:'#E6EDF3', fontSize:16, fontWeight:700 }}>Choose Avatar</div>
+              <button onClick={()=>setShowAvatarModal(false)} style={{ background:'none', border:'none', color:'#7D8590', cursor:'pointer' }}><X size={16}/></button>
+            </div>
+            <div style={{ color:'#7D8590', fontSize:12, marginBottom:16 }}>Select a predefined avatar or upload your own</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:12, marginBottom:16 }}>
+              {AVATARS.map(s=>(
+                <button key={s} onClick={()=>selectAvatar(s)} style={{ width:64, height:64, borderRadius:'50%', border:'2px solid transparent', overflow:'hidden', cursor:'pointer', background:'#0D1117', transition:'border-color 0.15s', padding:0 }} onMouseEnter={e=>(e.currentTarget.style.borderColor='#1F6FEB')} onMouseLeave={e=>(e.currentTarget.style.borderColor='transparent')}>
+                  <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${s}`} alt={s} style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                </button>
+              ))}
+            </div>
+            <label style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, padding:'12px 16px', border:'1px dashed #30363D', borderRadius:10, cursor:'pointer', transition:'background 0.15s' }} onMouseEnter={e=>(e.currentTarget.style.background='rgba(22,27,34,0.5)')} onMouseLeave={e=>(e.currentTarget.style.background='transparent')}>
+              <Upload size={16} color="#7D8590"/><span style={{ color:'#E6EDF3', fontSize:13 }}>Upload custom image</span>
+              <input type="file" accept="image/*" style={{ display:'none' }} onChange={handleAvatarChange}/>
             </label>
-            <p className="text-center text-xs text-[#7D8590] mt-2">Max file size: 2MB</p>
+            <div style={{ color:'#484F58', fontSize:11, textAlign:'center', marginTop:8 }}>Max 2MB</div>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
+
     </div>
-  );
+  </>);
 }

@@ -1,51 +1,17 @@
-import { useState, useEffect, useCallback } from 'react';
-import {
-  Shield, Mail, Database, Users, Globe, Lock, Bell, Slack,
-  Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive,
-  FileText, AlertTriangle, Plus, Trash2, UserPlus, X, Crown, Key
-} from "lucide-react";
+import { useState, useEffect } from 'react';
+import { Shield, Mail, Database, Users, Globe, Lock, Bell, Slack, Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive, FileText, Trash2, UserPlus, X, Crown, Key, Loader2, Settings as SI } from "lucide-react";
 import { Switch } from "../ui/switch";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "../ui/select";
-import { Separator } from "../ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
-import { Badge } from "../ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../ui/dialog';
 import { toast } from 'sonner';
-import {
-  getAppSettings, updateAppSettings, changePassword, getSystemInfo,
-  listUsers, createUser, deleteUser, adminResetPassword
-} from '../../services/api';
+import { getAppSettings, updateAppSettings, changePassword, getSystemInfo, listUsers, createUser, deleteUser, adminResetPassword } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 
 export function Settings() {
-  const { isDark, setDark } = useTheme();
-
-  // ── State ──
-  const [settings, setSettings] = useState<any>({
-    organization_name: 'DefenXion Security',
-    timezone: 'utc',
-    dark_mode: true,
-    notifications: {
-      critical_alerts: true,
-      email_reports: true,
-      weekly_digest: true,
-      slack_integration: false,
-    },
-    security: {
-      two_factor_enabled: false,
-      session_timeout_minutes: 30,
-      ip_whitelist_enabled: false,
-    },
-  });
+  const { setDark } = useTheme();
+  const [activeTab, setActiveTab] = useState('general');
+  const [settings, setSettings] = useState<any>({ organization_name:'DefenXion Security', timezone:'utc', dark_mode:true, notifications:{ critical_alerts:true, email_reports:true, weekly_digest:true, slack_integration:false }, security:{ two_factor_enabled:false, session_timeout_minutes:30, ip_whitelist_enabled:false } });
   const [systemInfo, setSystemInfo] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
-
-  // Password change
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -53,670 +19,143 @@ export function Settings() {
   const [showCurrentPw, setShowCurrentPw] = useState(false);
   const [showNewPw, setShowNewPw] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-
-  // Team management
   const [teamUsers, setTeamUsers] = useState<any[]>([]);
   const [showAddUser, setShowAddUser] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newEmail, setNewEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserRole, setNewUserRole] = useState('user');
+  const [resetUser, setResetUser] = useState<string|null>(null);
+  const [adminResetPw, setAdminResetPw] = useState('');
+  const [isResetting, setIsResetting] = useState(false);
 
-  // Admin Reset Password
-  const [resetUser, setResetUser] = useState<string | null>(null);
-  const [adminResetPasswordValue, setAdminResetPasswordValue] = useState('');
-  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  useEffect(() => { getAppSettings().then(d=>{if(d)setSettings(d)}).catch(console.error); getSystemInfo().then(setSystemInfo).catch(console.error); listUsers().then(setTeamUsers).catch(console.error); }, []);
 
-  // ── Fetch ──
-  useEffect(() => {
-    getAppSettings().then(data => {
-      if (data) setSettings(data);
-    }).catch(console.error);
+  const updateField = (path: string, value: any) => { setSettings((p: any) => { const k=path.split('.'),u={...p}; let o=u; for(let i=0;i<k.length-1;i++){o[k[i]]={...o[k[i]]};o=o[k[i]]} o[k[k.length-1]]=value; return u; }); setHasChanges(true); };
+  const handleSave = async () => { setIsSaving(true); try{await updateAppSettings(settings);setDark(settings.dark_mode);toast.success('Saved!');setHasChanges(false)}catch{toast.error('Failed')}finally{setIsSaving(false)} };
+  const handleChangePw = async () => { if(!currentPassword){toast.error('Enter current password');return} if(newPassword.length<8){toast.error('Min 8 chars');return} if(newPassword!==confirmPassword){toast.error('Mismatch');return} setIsChangingPassword(true); try{await changePassword(currentPassword,newPassword);toast.success('Changed!');setCurrentPassword('');setNewPassword('');setConfirmPassword('');setShowPasswordForm(false)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')}finally{setIsChangingPassword(false)} };
+  const handleCreateUser = async () => { if(!newUsername.trim()||!newEmail.trim()||!newUserPassword.trim()){toast.error('All fields required');return} if(newUserPassword.length<8){toast.error('Min 8 chars');return} try{await createUser(newUsername,newEmail,newUserPassword,newUserRole);toast.success(`Created "${newUsername}"`);setShowAddUser(false);setNewUsername('');setNewEmail('');setNewUserPassword('');setNewUserRole('user');listUsers().then(setTeamUsers);getSystemInfo().then(setSystemInfo)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')} };
+  const handleDeleteUser = async (u:string) => { if(!confirm(`Delete "${u}"?`))return; try{await deleteUser(u);toast.success(`Deleted`);listUsers().then(setTeamUsers);getSystemInfo().then(setSystemInfo)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')} };
+  const handleResetPw = async () => { if(!resetUser)return; if(adminResetPw.length<8){toast.error('Min 8 chars');return} setIsResetting(true); try{await adminResetPassword(resetUser,adminResetPw);toast.success(`Reset for ${resetUser}`);setResetUser(null);setAdminResetPw('')}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')}finally{setIsResetting(false)} };
 
-    getSystemInfo().then(setSystemInfo).catch(console.error);
+  const C:React.CSSProperties={background:'linear-gradient(135deg,#161B22,#1a1f28)',border:'1px solid #21262D',borderRadius:16};
+  const I:React.CSSProperties={width:'100%',background:'rgba(13,17,23,0.8)',border:'1px solid #30363D',borderRadius:8,padding:'8px 12px',color:'#E6EDF3',fontSize:13,outline:'none',fontFamily:'inherit',boxSizing:'border-box'};
+  const S:React.CSSProperties={background:'rgba(13,17,23,0.5)',borderRadius:12,padding:'16px 18px',border:'1px solid #21262D'};
+  const L:React.CSSProperties={color:'#7D8590',fontSize:12,marginBottom:6,display:'block'};
+  const pill=(c:string):React.CSSProperties=>({padding:'2px 8px',borderRadius:20,fontSize:10,fontWeight:600,color:c,background:`${c}10`,border:`1px solid ${c}33`,display:'flex',alignItems:'center',gap:4});
 
-    listUsers().then(setTeamUsers).catch(console.error);
-  }, []);
+  return (<>
+    <style>{`@keyframes sf{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}@keyframes ss{to{transform:rotate(360deg)}}.sr{animation:sf .35s ease both}.sr:nth-child(2){animation-delay:.06s}.sr:nth-child(3){animation-delay:.12s}`}</style>
+    <div style={{padding:'28px 32px',maxWidth:1440,margin:'0 auto'}}>
 
-  // ── Helpers ──
-  const updateField = (path: string, value: any) => {
-    setSettings((prev: any) => {
-      const keys = path.split('.');
-      const updated = { ...prev };
-      let obj = updated;
-      for (let i = 0; i < keys.length - 1; i++) {
-        obj[keys[i]] = { ...obj[keys[i]] };
-        obj = obj[keys[i]];
-      }
-      obj[keys[keys.length - 1]] = value;
-      return updated;
-    });
-    setHasChanges(true);
-  };
+    {/* Header */}
+    <div className="sr" style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24}}>
+      <div style={{display:'flex',alignItems:'center',gap:14}}>
+        <div style={{width:44,height:44,borderRadius:14,background:'linear-gradient(135deg,#58A6FF,#1F6FEB)',display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 6px 20px rgba(31,111,235,0.3)'}}><SI size={22} color="white"/></div>
+        <div><h1 style={{color:'#E6EDF3',fontSize:22,fontWeight:700,letterSpacing:'-0.02em',margin:0}}>Settings</h1><p style={{color:'#7D8590',fontSize:13,marginTop:3}}>Configuration & team management</p></div>
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        {hasChanges&&<span style={{...pill('#FFA657'),animation:'sf .3s ease'}}>Unsaved</span>}
+        <button disabled={isSaving||!hasChanges} onClick={handleSave} style={{display:'flex',alignItems:'center',gap:7,padding:'9px 18px',borderRadius:10,border:'none',cursor:(isSaving||!hasChanges)?'not-allowed':'pointer',opacity:(isSaving||!hasChanges)?0.4:1,background:'linear-gradient(135deg,#1F6FEB,#2679f5)',color:'white',fontSize:13,fontWeight:600,fontFamily:'inherit',boxShadow:'0 4px 16px rgba(31,111,235,0.3)'}}>
+          {isSaving?<Loader2 size={15} style={{animation:'ss .8s linear infinite'}}/>:<Save size={15}/>} {isSaving?'Saving…':'Save'}
+        </button>
+      </div>
+    </div>
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    try {
-      await updateAppSettings(settings);
-      // Sync theme with saved settings
-      setDark(settings.dark_mode);
-      toast.success('Settings saved successfully!');
-      setHasChanges(false);
-    } catch {
-      toast.error('Failed to save settings');
-    } finally {
-      setIsSaving(false);
-    }
-  };
+    {/* Tabs */}
+    <div className="sr" style={{display:'flex',gap:4,marginBottom:20,background:'rgba(22,27,34,0.6)',borderRadius:10,padding:3,width:'fit-content'}}>
+      {['general','notifications','security','integrations'].map(t=>(
+        <button key={t} onClick={()=>setActiveTab(t)} style={{padding:'8px 18px',borderRadius:8,border:'none',fontSize:13,fontWeight:600,fontFamily:'inherit',cursor:'pointer',textTransform:'capitalize',transition:'all .2s',background:activeTab===t?'linear-gradient(135deg,#1F6FEB,#2679f5)':'transparent',color:activeTab===t?'white':'#7D8590',boxShadow:activeTab===t?'0 2px 8px rgba(31,111,235,0.3)':'none'}}>{t}</button>
+      ))}
+    </div>
 
-  const handleChangePassword = async () => {
-    if (!currentPassword) { toast.error('Enter your current password'); return; }
-    if (newPassword.length < 8) { toast.error('New password must be at least 8 characters'); return; }
-    if (newPassword !== confirmPassword) { toast.error('Passwords do not match'); return; }
-    setIsChangingPassword(true);
-    try {
-      await changePassword(currentPassword, newPassword);
-      toast.success('Password changed successfully!');
-      setCurrentPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
-      setShowPasswordForm(false);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to change password');
-    } finally {
-      setIsChangingPassword(false);
-    }
-  };
+    {/* General */}
+    {activeTab==='general'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:16}}>
+      <div style={S}><div style={L}>Organization Name</div><input value={settings.organization_name} onChange={e=>updateField('organization_name',e.target.value)} style={I}/></div>
+      <div style={S}><div style={L}>Time Zone</div><div style={{display:'flex',alignItems:'center',gap:8}}><Globe size={14} color="#7D8590"/><select value={settings.timezone} onChange={e=>updateField('timezone',e.target.value)} style={{...I,cursor:'pointer',width:260}}>{[['utc','UTC'],['est','Eastern'],['cst','Central'],['mst','Mountain'],['pst','Pacific'],['gmt','GMT'],['cet','CET'],['ist','IST'],['jst','JST'],['aest','AEST']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>
+      <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Dark Mode</div><div style={{color:'#7D8590',fontSize:12,marginTop:2}}>Use dark theme</div></div><Switch checked={settings.dark_mode} onCheckedChange={v=>{updateField('dark_mode',v);setDark(v)}}/></div>
+    </div></div>}
 
-  const handleCreateUser = async () => {
-    if (!newUsername.trim() || !newEmail.trim() || !newUserPassword.trim()) {
-      toast.error('All fields are required'); return;
-    }
-    if (newUserPassword.length < 8) {
-      toast.error('Password must be at least 8 characters'); return;
-    }
-    try {
-      await createUser(newUsername, newEmail, newUserPassword, newUserRole);
-      toast.success(`User "${newUsername}" created!`);
-      setShowAddUser(false);
-      setNewUsername(''); setNewEmail(''); setNewUserPassword(''); setNewUserRole('user');
-      listUsers().then(setTeamUsers).catch(console.error);
-      getSystemInfo().then(setSystemInfo).catch(console.error);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to create user');
-    }
-  };
+    {/* Notifications */}
+    {activeTab==='notifications'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:14}}>
+      {[{icon:Shield,color:'#FF4D4D',title:'Critical Alerts',desc:'Instant push for high-risk threats',field:'notifications.critical_alerts',val:settings.notifications?.critical_alerts},
+        {icon:Mail,color:'#58A6FF',title:'Email Reports',desc:'Periodic security summaries',field:'notifications.email_reports',val:settings.notifications?.email_reports},
+        {icon:Bell,color:'#E3B341',title:'Weekly Digest',desc:'Weekly security digest',field:'notifications.weekly_digest',val:settings.notifications?.weekly_digest},
+        {icon:Slack,color:'#BC8CFF',title:'Slack Notifications',desc:'Send alerts to Slack',field:'notifications.slack_integration',val:settings.notifications?.slack_integration},
+      ].map((n,i)=><div key={i} style={S}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}><div style={{display:'flex',alignItems:'center',gap:10}}><n.icon size={16} color={n.color}/><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>{n.title}</div><div style={{color:'#7D8590',fontSize:12,marginTop:1}}>{n.desc}</div></div></div><Switch checked={n.val} onCheckedChange={v=>updateField(n.field,v)}/></div>
+        {n.field==='notifications.email_reports'&&(settings.notifications?.email_reports||settings.notifications?.critical_alerts)&&<div style={{marginTop:12,paddingLeft:26}}><div style={L}>Email</div><input placeholder="admin@defenxion.com" value={settings.notifications?.email_address||''} onChange={e=>updateField('notifications.email_address',e.target.value)} style={I}/></div>}
+        {n.field==='notifications.slack_integration'&&settings.notifications?.slack_integration&&<div style={{marginTop:12,paddingLeft:26}}><div style={L}>Webhook URL</div><input placeholder="https://hooks.slack.com/..." value={settings.notifications?.slack_webhook_url||''} onChange={e=>updateField('notifications.slack_webhook_url',e.target.value)} style={I}/></div>}
+      </div>)}
+    </div></div>}
 
-  const handleDeleteUser = async (username: string) => {
-    if (!confirm(`Delete user "${username}"? This cannot be undone.`)) return;
-    try {
-      await deleteUser(username);
-      toast.success(`User "${username}" deleted`);
-      listUsers().then(setTeamUsers).catch(console.error);
-      getSystemInfo().then(setSystemInfo).catch(console.error);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to delete user');
-    }
-  };
+    {/* Security */}
+    {activeTab==='security'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:14}}>
+      <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Two-Factor Auth</div><div style={{color:'#7D8590',fontSize:12,marginTop:1}}>Extra security layer</div></div><Switch checked={settings.security?.two_factor_enabled} onCheckedChange={v=>updateField('security.two_factor_enabled',v)}/></div>
+      <div style={S}><div style={L}>Session Timeout</div><div style={{display:'flex',alignItems:'center',gap:8}}><Clock size={14} color="#7D8590"/><select value={String(settings.security?.session_timeout_minutes||30)} onChange={e=>updateField('security.session_timeout_minutes',parseInt(e.target.value))} style={{...I,cursor:'pointer',width:200}}>{[['15','15 min'],['30','30 min'],['60','1 hour'],['120','2 hours'],['480','8 hours']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>
+      <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>IP Whitelist</div><div style={{color:'#7D8590',fontSize:12,marginTop:1}}>Only whitelisted IPs</div></div><Switch checked={settings.security?.ip_whitelist_enabled} onCheckedChange={v=>updateField('security.ip_whitelist_enabled',v)}/></div>
+      <div style={S}>
+        <button onClick={()=>setShowPasswordForm(!showPasswordForm)} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:8,background:'rgba(255,255,255,0.04)',border:'1px solid #30363D',color:'#E6EDF3',fontSize:12,fontWeight:600,fontFamily:'inherit',cursor:'pointer'}}><Lock size={14}/> Change Password</button>
+        {showPasswordForm&&<div style={{marginTop:14,background:'rgba(13,17,23,0.5)',borderRadius:10,padding:16,border:'1px solid #21262D',maxWidth:400,display:'flex',flexDirection:'column',gap:12}}>
+          <div><div style={L}>Current Password</div><div style={{position:'relative'}}><input type={showCurrentPw?'text':'password'} value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} style={I}/><button onClick={()=>setShowCurrentPw(!showCurrentPw)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#7D8590',cursor:'pointer'}}>{showCurrentPw?<EyeOff size={14}/>:<Eye size={14}/>}</button></div></div>
+          <div><div style={L}>New Password</div><div style={{position:'relative'}}><input type={showNewPw?'text':'password'} value={newPassword} onChange={e=>setNewPassword(e.target.value)} style={I}/><button onClick={()=>setShowNewPw(!showNewPw)} style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',color:'#7D8590',cursor:'pointer'}}>{showNewPw?<EyeOff size={14}/>:<Eye size={14}/>}</button></div>{newPassword&&newPassword.length<8&&<div style={{color:'#FF4D4D',fontSize:11,marginTop:4}}>Min 8 chars</div>}</div>
+          <div><div style={L}>Confirm</div><input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} style={I}/>{confirmPassword&&newPassword!==confirmPassword&&<div style={{color:'#FF4D4D',fontSize:11,marginTop:4}}>Mismatch</div>}</div>
+          <button disabled={isChangingPassword||newPassword.length<8||newPassword!==confirmPassword} onClick={handleChangePw} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:8,border:'none',cursor:'pointer',background:'linear-gradient(135deg,#3FB950,#2ea043)',color:'white',fontSize:12,fontWeight:600,fontFamily:'inherit',opacity:(newPassword.length<8||newPassword!==confirmPassword)?0.4:1}}><CheckCircle size={13}/> {isChangingPassword?'Changing…':'Update'}</button>
+        </div>}
+      </div>
+    </div></div>}
 
-  const handleAdminResetPassword = async () => {
-    if (!resetUser) return;
-    if (adminResetPasswordValue.length < 8) {
-      toast.error('New password must be at least 8 characters');
-      return;
-    }
-    setIsResettingPassword(true);
-    try {
-      await adminResetPassword(resetUser, adminResetPasswordValue);
-      toast.success(`Password for ${resetUser} has been reset successfully!`);
-      setResetUser(null);
-      setAdminResetPasswordValue('');
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || 'Failed to reset password');
-    } finally {
-      setIsResettingPassword(false);
-    }
-  };
-
-  return (
-    <div className="p-8 max-w-[1400px] mx-auto" style={{ color: 'var(--dx-text-primary)' }}>
-      <div className="flex items-center justify-between mb-8">
-        <h2 className="text-2xl font-semibold" style={{ color: 'var(--dx-text-primary)' }}>Settings</h2>
-        <div className="flex items-center gap-3">
-          {hasChanges && (
-            <Badge variant="outline" className="border-[#FFA657] text-[#FFA657] animate-pulse">
-              Unsaved Changes
-            </Badge>
-          )}
-          <Button
-            className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90 gap-2"
-            disabled={isSaving || !hasChanges}
-            onClick={handleSave}
-          >
-            <Save className="w-4 h-4" />
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </Button>
+    {/* Integrations */}
+    {activeTab==='integrations'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:16}}>
+      {/* MongoDB */}
+      <div style={S}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}><div style={{display:'flex',alignItems:'center',gap:10}}><Database size={16} color="#3FB950"/><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>MongoDB</div><div style={{color:'#7D8590',fontSize:12}}>Primary database</div></div></div><span style={pill('#3FB950')}><CheckCircle size={10}/> Connected</span></div>
+        {systemInfo&&<div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:8}}>{[{l:'Collections',v:systemInfo.database?.collections,ic:HardDrive},{l:'Detections',v:systemInfo.database?.detections,ic:Shield},{l:'Users',v:systemInfo.database?.users,ic:Users},{l:'Logs',v:systemInfo.database?.logs,ic:FileText}].map((s,i)=><div key={i} style={{background:'rgba(13,17,23,0.5)',borderRadius:8,padding:'10px 12px',border:'1px solid #21262D'}}><div style={{display:'flex',alignItems:'center',gap:4,color:'#7D8590',fontSize:10,marginBottom:4}}><s.ic size={11}/>{s.l}</div><div style={{color:'#E6EDF3',fontFamily:'monospace',fontSize:16,fontWeight:700}}>{(s.v||0).toLocaleString()}</div></div>)}</div>}
+      </div>
+      {/* API */}
+      <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div style={{display:'flex',alignItems:'center',gap:10}}><Server size={16} color="#58A6FF"/><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>API Server</div><div style={{color:'#7D8590',fontSize:12}}>{systemInfo?`${systemInfo.server?.framework} v${systemInfo.server?.version}`:'Loading…'}</div></div></div><span style={pill('#3FB950')}><CheckCircle size={10}/> Active</span></div>
+      {/* SMTP */}
+      <div style={S}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}><Mail size={16} color="#7D8590"/><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>SMTP Server</div><div style={{color:'#7D8590',fontSize:12}}>Outbound email</div></div></div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+          <div><div style={L}>Host</div><input value={settings.smtp?.host||''} onChange={e=>updateField('smtp.host',e.target.value)} placeholder="smtp.gmail.com" style={I}/></div>
+          <div><div style={L}>Port</div><input value={settings.smtp?.port||''} onChange={e=>updateField('smtp.port',parseInt(e.target.value)||587)} placeholder="587" style={I}/></div>
+          <div><div style={L}>Username</div><input value={settings.smtp?.username||''} onChange={e=>updateField('smtp.username',e.target.value)} placeholder="admin@example.com" style={I}/></div>
+          <div><div style={L}>Password</div><input type="password" value={settings.smtp?.password||''} onChange={e=>updateField('smtp.password',e.target.value)} placeholder="••••••••" style={I}/></div>
         </div>
       </div>
-
-      <Tabs defaultValue="general" className="space-y-6">
-        <TabsList style={{ backgroundColor: 'var(--dx-bg-card)', border: '1px solid var(--dx-border)' }}>
-          <TabsTrigger value="general" className="data-[state=active]:bg-[#1F6FEB] data-[state=active]:text-white">General</TabsTrigger>
-          <TabsTrigger value="notifications" className="data-[state=active]:bg-[#1F6FEB] data-[state=active]:text-white">Notifications</TabsTrigger>
-          <TabsTrigger value="security" className="data-[state=active]:bg-[#1F6FEB] data-[state=active]:text-white">Security</TabsTrigger>
-          <TabsTrigger value="integrations" className="data-[state=active]:bg-[#1F6FEB] data-[state=active]:text-white">Integrations</TabsTrigger>
-        </TabsList>
-
-        {/* ── General ── */}
-        <TabsContent value="general">
-          <div className="rounded-2xl p-6 space-y-6" style={{ backgroundColor: 'var(--dx-bg-card)', border: '1px solid var(--dx-border)' }}>
-            <div>
-              <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Organization Name</label>
-              <Input
-                value={settings.organization_name}
-                onChange={e => updateField('organization_name', e.target.value)}
-                style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
-              />
-            </div>
-
-            <div>
-              <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Time Zone</label>
-              <Select value={settings.timezone} onValueChange={v => updateField('timezone', v)}>
-                <SelectTrigger className="flex items-center gap-2" style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}>
-                  <Globe className="w-4 h-4" />
-                  <SelectValue placeholder="Select timezone" />
-                </SelectTrigger>
-                <SelectContent style={{ backgroundColor: isDark ? '#161B22' : '#ffffff', borderColor: 'var(--dx-border)' }}>
-                  <SelectItem value="utc" style={{ color: 'var(--dx-text-primary)' }}>UTC (GMT+0)</SelectItem>
-                  <SelectItem value="est" style={{ color: 'var(--dx-text-primary)' }}>Eastern Time (GMT-5)</SelectItem>
-                  <SelectItem value="cst" style={{ color: 'var(--dx-text-primary)' }}>Central Time (GMT-6)</SelectItem>
-                  <SelectItem value="mst" style={{ color: 'var(--dx-text-primary)' }}>Mountain Time (GMT-7)</SelectItem>
-                  <SelectItem value="pst" style={{ color: 'var(--dx-text-primary)' }}>Pacific Time (GMT-8)</SelectItem>
-                  <SelectItem value="gmt" style={{ color: 'var(--dx-text-primary)' }}>GMT (London)</SelectItem>
-                  <SelectItem value="cet" style={{ color: 'var(--dx-text-primary)' }}>CET (Berlin, Paris)</SelectItem>
-                  <SelectItem value="ist" style={{ color: 'var(--dx-text-primary)' }}>IST (India, GMT+5:30)</SelectItem>
-                  <SelectItem value="jst" style={{ color: 'var(--dx-text-primary)' }}>JST (Tokyo, GMT+9)</SelectItem>
-                  <SelectItem value="aest" style={{ color: 'var(--dx-text-primary)' }}>AEST (Sydney, GMT+10)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            <div className="flex justify-between items-center">
-              <div>
-                <div style={{ color: 'var(--dx-text-primary)' }}>Dark Mode</div>
-                <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Use dark theme across the application</div>
-              </div>
-              <Switch
-                checked={settings.dark_mode}
-                onCheckedChange={v => {
-                  updateField('dark_mode', v);
-                  setDark(v);
-                }}
-              />
-            </div>
+      {/* Team */}
+      <div style={S}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}><div style={{display:'flex',alignItems:'center',gap:10}}><Users size={16} color="#FFA657"/><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Team</div><div style={{color:'#7D8590',fontSize:12}}>{teamUsers.length} users</div></div></div><button onClick={()=>setShowAddUser(!showAddUser)} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 12px',borderRadius:8,background:'linear-gradient(135deg,#1F6FEB,#2679f5)',border:'none',color:'white',fontSize:11,fontWeight:600,fontFamily:'inherit',cursor:'pointer'}}><UserPlus size={12}/> Add</button></div>
+        {showAddUser&&<div style={{background:'rgba(13,17,23,0.5)',border:'1px solid rgba(31,111,235,0.2)',borderRadius:10,padding:16,marginBottom:12}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}><div style={{color:'#E6EDF3',fontSize:13,fontWeight:600}}>Create User</div><button onClick={()=>setShowAddUser(false)} style={{background:'none',border:'none',color:'#7D8590',cursor:'pointer'}}><X size={14}/></button></div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+            <div><div style={L}>Username</div><input value={newUsername} onChange={e=>setNewUsername(e.target.value)} placeholder="john" style={I}/></div>
+            <div><div style={L}>Email</div><input value={newEmail} onChange={e=>setNewEmail(e.target.value)} placeholder="john@ex.com" style={I}/></div>
+            <div><div style={L}>Password</div><input type="password" value={newUserPassword} onChange={e=>setNewUserPassword(e.target.value)} placeholder="Min 8" style={I}/></div>
+            <div><div style={L}>Role</div><select value={newUserRole} onChange={e=>setNewUserRole(e.target.value)} style={{...I,cursor:'pointer'}}><option value="user">User</option><option value="admin">Admin</option></select></div>
           </div>
-        </TabsContent>
+          <button onClick={handleCreateUser} style={{display:'flex',alignItems:'center',gap:5,padding:'7px 12px',borderRadius:8,background:'linear-gradient(135deg,#3FB950,#2ea043)',border:'none',color:'white',fontSize:11,fontWeight:600,fontFamily:'inherit',cursor:'pointer'}}><CheckCircle size={12}/> Create</button>
+        </div>}
+        <div style={{display:'flex',flexDirection:'column',gap:6}}>{teamUsers.map((u:any)=>{const a=u.role==='admin';const ac=a?'#FFA657':'#58A6FF';return(
+          <div key={u.username} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(13,17,23,0.5)',borderRadius:10,padding:'10px 14px',border:'1px solid #21262D'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}><div style={{width:32,height:32,borderRadius:'50%',background:`${ac}18`,color:ac,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700}}>{u.username?.charAt(0).toUpperCase()}</div><div><div style={{display:'flex',alignItems:'center',gap:5,color:'#E6EDF3',fontSize:13}}>{u.username}{a&&<Crown size={12} color="#FFA657"/>}</div><div style={{color:'#7D8590',fontSize:11}}>{u.email}</div></div></div>
+            <div style={{display:'flex',alignItems:'center',gap:6}}><span style={pill(ac)}>{u.role}</span>{u.account_locked&&<span style={pill('#FF4D4D')}>Locked</span>}<button onClick={()=>setResetUser(u.username)} style={{padding:5,borderRadius:6,background:'rgba(88,166,255,0.1)',border:'none',color:'#58A6FF',cursor:'pointer'}}><Key size={13}/></button><button onClick={()=>handleDeleteUser(u.username)} style={{padding:5,borderRadius:6,background:'rgba(255,77,77,0.08)',border:'none',color:'#FF4D4D',cursor:'pointer'}}><Trash2 size={13}/></button></div>
+          </div>);})}</div>
+      </div>
+    </div></div>}
 
-        {/* ── Notifications ── */}
-        <TabsContent value="notifications">
-          <div className="rounded-2xl p-6 space-y-6" style={{ backgroundColor: 'var(--dx-bg-card)', border: '1px solid var(--dx-border)' }}>
-            {/* Critical Alerts */}
-            <div>
-              <div className="flex justify-between items-center">
-                <div className="flex gap-3 items-center">
-                  <Shield className="w-5 h-5 text-red-500" />
-                  <div>
-                    <div style={{ color: 'var(--dx-text-primary)' }}>Critical Threat Alerts</div>
-                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Instant push notifications for high-risk threats</div>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.notifications?.critical_alerts}
-                  onCheckedChange={v => updateField('notifications.critical_alerts', v)}
-                />
-              </div>
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            {/* Email Reports */}
-            <div>
-              <div className="flex justify-between items-center">
-                <div className="flex gap-3 items-center">
-                  <Mail className="w-5 h-5 text-blue-400" />
-                  <div>
-                    <div style={{ color: 'var(--dx-text-primary)' }}>Email Reports</div>
-                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Periodic security summary emails</div>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.notifications?.email_reports}
-                  onCheckedChange={v => updateField('notifications.email_reports', v)}
-                />
-              </div>
-              {(settings.notifications?.email_reports || settings.notifications?.critical_alerts) && (
-                <div className="mt-4 pl-8">
-                  <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Destination Email Address</label>
-                  <Input
-                    placeholder="admin@defenxion.com"
-                    value={settings.notifications?.email_address || ''}
-                    onChange={e => updateField('notifications.email_address', e.target.value)}
-                    style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
-                  />
-                </div>
-              )}
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            {/* Weekly Digest */}
-            <div>
-              <div className="flex justify-between items-center">
-                <div className="flex gap-3 items-center">
-                  <Bell className="w-5 h-5 text-yellow-400" />
-                  <div>
-                    <div style={{ color: 'var(--dx-text-primary)' }}>Weekly Digest</div>
-                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Comprehensive weekly security digest</div>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.notifications?.weekly_digest}
-                  onCheckedChange={v => updateField('notifications.weekly_digest', v)}
-                />
-              </div>
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            {/* Slack Integration */}
-            <div>
-              <div className="flex justify-between items-center">
-                <div className="flex gap-3 items-center">
-                  <Slack className="w-5 h-5 text-purple-400" />
-                  <div>
-                    <div style={{ color: 'var(--dx-text-primary)' }}>Slack Notifications</div>
-                    <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Send alerts to a Slack channel</div>
-                  </div>
-                </div>
-                <Switch
-                  checked={settings.notifications?.slack_integration}
-                  onCheckedChange={v => updateField('notifications.slack_integration', v)}
-                />
-              </div>
-              {settings.notifications?.slack_integration && (
-                <div className="mt-4 pl-8">
-                  <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Slack Webhook URL</label>
-                  <Input
-                    placeholder="https://hooks.slack.com/services/..."
-                    value={settings.notifications?.slack_webhook_url || ''}
-                    onChange={e => updateField('notifications.slack_webhook_url', e.target.value)}
-                    style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ── Security ── */}
-        <TabsContent value="security">
-          <div className="rounded-2xl p-6 space-y-6" style={{ backgroundColor: 'var(--dx-bg-card)', border: '1px solid var(--dx-border)' }}>
-            {/* 2FA */}
-            <div className="flex justify-between items-center">
-              <div>
-                <div style={{ color: 'var(--dx-text-primary)' }}>Two-Factor Authentication</div>
-                <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Extra layer of security for your account</div>
-              </div>
-              <Switch
-                checked={settings.security?.two_factor_enabled}
-                onCheckedChange={v => updateField('security.two_factor_enabled', v)}
-              />
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            {/* Session Timeout */}
-            <div>
-              <label className="text-sm mb-2 block" style={{ color: 'var(--dx-text-secondary)' }}>Session Timeout</label>
-              <Select
-                value={String(settings.security?.session_timeout_minutes || 30)}
-                onValueChange={v => updateField('security.session_timeout_minutes', parseInt(v))}
-              >
-                <SelectTrigger className="w-[240px]" style={{ backgroundColor: 'var(--dx-bg-input)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}>
-                  <Clock className="w-4 h-4 mr-2" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent style={{ backgroundColor: isDark ? '#161B22' : '#ffffff', borderColor: 'var(--dx-border)' }}>
-                  <SelectItem value="15" style={{ color: 'var(--dx-text-primary)' }}>15 minutes</SelectItem>
-                  <SelectItem value="30" style={{ color: 'var(--dx-text-primary)' }}>30 minutes</SelectItem>
-                  <SelectItem value="60" style={{ color: 'var(--dx-text-primary)' }}>1 hour</SelectItem>
-                  <SelectItem value="120" style={{ color: 'var(--dx-text-primary)' }}>2 hours</SelectItem>
-                  <SelectItem value="480" style={{ color: 'var(--dx-text-primary)' }}>8 hours</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            {/* IP Whitelist */}
-            <div className="flex justify-between items-center">
-              <div>
-                <div style={{ color: 'var(--dx-text-primary)' }}>IP Whitelist</div>
-                <div className="text-sm" style={{ color: 'var(--dx-text-muted)' }}>Only allow access from whitelisted IPs</div>
-              </div>
-              <Switch
-                checked={settings.security?.ip_whitelist_enabled}
-                onCheckedChange={v => updateField('security.ip_whitelist_enabled', v)}
-              />
-            </div>
-
-            <Separator style={{ background: 'var(--dx-border)' }} />
-
-            {/* Change Password */}
-            <div>
-              <Button
-                variant="outline"
-                className="gap-2" style={{ borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
-                onClick={() => setShowPasswordForm(!showPasswordForm)}
-              >
-                <Lock className="w-4 h-4" />
-                Change Password
-              </Button>
-
-              {showPasswordForm && (
-                <div className="mt-4 rounded-xl p-5 space-y-4 max-w-md" style={{ backgroundColor: 'var(--dx-bg-input)', border: '1px solid var(--dx-border)' }}>
-                  <div>
-                    <label className="text-sm block mb-1" style={{ color: 'var(--dx-text-muted)' }}>Current Password</label>
-                    <div className="relative">
-                      <Input
-                        type={showCurrentPw ? 'text' : 'password'}
-                        value={currentPassword}
-                        onChange={e => setCurrentPassword(e.target.value)}
-                        style={{ backgroundColor: 'var(--dx-bg-secondary)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
-                        className="pr-10"
-                        placeholder="Enter current password"
-                      />
-                      <button onClick={() => setShowCurrentPw(!showCurrentPw)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--dx-text-muted)' }}>
-                        {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-sm block mb-1" style={{ color: 'var(--dx-text-muted)' }}>New Password</label>
-                    <div className="relative">
-                      <Input
-                        type={showNewPw ? 'text' : 'password'}
-                        value={newPassword}
-                        onChange={e => setNewPassword(e.target.value)}
-                        style={{ backgroundColor: 'var(--dx-bg-secondary)', borderColor: 'var(--dx-border)', color: 'var(--dx-text-primary)' }}
-                        className="pr-10"
-                        placeholder="Min 8 characters"
-                      />
-                      <button onClick={() => setShowNewPw(!showNewPw)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[#7D8590]">
-                        {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                    {newPassword && newPassword.length < 8 && (
-                      <p className="text-[#FF4D4D] text-xs mt-1">Password must be at least 8 characters</p>
-                    )}
-                  </div>
-                  <div>
-                    <label className="text-[#7D8590] text-sm block mb-1">Confirm New Password</label>
-                    <Input
-                      type="password"
-                      value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
-                      className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]"
-                      placeholder="Re-enter new password"
-                    />
-                    {confirmPassword && newPassword !== confirmPassword && (
-                      <p className="text-[#FF4D4D] text-xs mt-1">Passwords do not match</p>
-                    )}
-                  </div>
-                  <Button
-                    className="bg-[#3FB950] hover:bg-[#3FB950]/90 gap-2"
-                    disabled={isChangingPassword || newPassword.length < 8 || newPassword !== confirmPassword}
-                    onClick={handleChangePassword}
-                  >
-                    <CheckCircle className="w-4 h-4" />
-                    {isChangingPassword ? 'Changing...' : 'Update Password'}
-                  </Button>
-                </div>
-              )}
-            </div>
-          </div>
-        </TabsContent>
-
-        {/* ── Integrations ── */}
-        <TabsContent value="integrations">
-          <div className="bg-[#1E232B] rounded-2xl p-6 border border-[#30363D] space-y-6">
-            {/* MongoDB Status */}
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex gap-3 items-center">
-                  <Database className="w-5 h-5 text-green-400" />
-                  <div>
-                    <div className="text-[#E6EDF3]">MongoDB Integration</div>
-                    <div className="text-[#7D8590] text-sm">Primary database connection</div>
-                  </div>
-                </div>
-                <Badge variant="outline" className="border-[#3FB950] text-[#3FB950] gap-1">
-                  <CheckCircle className="w-3 h-3" /> Connected
-                </Badge>
-              </div>
-              {systemInfo && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: 'Collections', value: systemInfo.database?.collections, icon: HardDrive },
-                    { label: 'Detections', value: systemInfo.database?.detections, icon: Shield },
-                    { label: 'Users', value: systemInfo.database?.users, icon: Users },
-                    { label: 'Log Entries', value: systemInfo.database?.logs, icon: FileText },
-                  ].map((s, i) => (
-                    <div key={i} className="bg-[#0D1117] rounded-lg p-3 border border-[#30363D]">
-                      <div className="flex items-center gap-2 text-[#7D8590] text-xs mb-1">
-                        <s.icon className="w-3 h-3" />
-                        {s.label}
-                      </div>
-                      <div className="text-[#E6EDF3] font-mono text-lg">{(s.value || 0).toLocaleString()}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Separator className="bg-[#30363D]" />
-
-            {/* Server Info */}
-            <div className="flex justify-between items-center">
-              <div className="flex gap-3 items-center">
-                <Server className="w-5 h-5 text-blue-400" />
-                <div>
-                  <div className="text-[#E6EDF3]">API Server</div>
-                  <div className="text-[#7D8590] text-sm">
-                    {systemInfo ? `${systemInfo.server?.framework} v${systemInfo.server?.version}` : 'Loading...'}
-                  </div>
-                </div>
-              </div>
-              <Badge variant="outline" className="border-[#3FB950] text-[#3FB950] gap-1">
-                <CheckCircle className="w-3 h-3" /> Active
-              </Badge>
-            </div>
-
-            <Separator className="bg-[#30363D]" />
-
-            {/* SMTP Configuration */}
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex gap-3 items-center">
-                  <Mail className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <div className="text-[#E6EDF3]">SMTP Server (Outbound Email)</div>
-                    <div className="text-[#7D8590] text-sm">Required for sending email reports and critical alerts</div>
-                  </div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-[#7D8590] text-sm block mb-1">SMTP Host</label>
-                  <Input value={settings.smtp?.host || ''} onChange={e => updateField('smtp.host', e.target.value)} placeholder="smtp.gmail.com" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                </div>
-                <div>
-                  <label className="text-[#7D8590] text-sm block mb-1">SMTP Port</label>
-                  <Input value={settings.smtp?.port || ''} onChange={e => updateField('smtp.port', parseInt(e.target.value) || 587)} placeholder="587" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                </div>
-                <div>
-                  <label className="text-[#7D8590] text-sm block mb-1">SMTP Username / Email</label>
-                  <Input value={settings.smtp?.username || ''} onChange={e => updateField('smtp.username', e.target.value)} placeholder="admin@example.com" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                </div>
-                <div>
-                  <label className="text-[#7D8590] text-sm block mb-1">SMTP App Password</label>
-                  <Input type="password" value={settings.smtp?.password || ''} onChange={e => updateField('smtp.password', e.target.value)} placeholder="••••••••" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                </div>
-              </div>
-            </div>
-
-            <Separator className="bg-[#30363D]" />
-
-            {/* Team Management */}
-            <div>
-              <div className="flex justify-between items-center mb-4">
-                <div className="flex gap-3 items-center">
-                  <Users className="w-5 h-5 text-orange-400" />
-                  <div>
-                    <div className="text-[#E6EDF3]">Team Management</div>
-                    <div className="text-[#7D8590] text-sm">{teamUsers.length} registered user(s)</div>
-                  </div>
-                </div>
-                <Button className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90 gap-2" onClick={() => setShowAddUser(!showAddUser)}>
-                  <UserPlus className="w-4 h-4" /> Add User
-                </Button>
-              </div>
-
-              {/* Add User Form */}
-              {showAddUser && (
-                <div className="bg-[#0D1117] border border-[#1F6FEB]/40 rounded-xl p-5 mb-4">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="text-[#E6EDF3]">Create New User</h4>
-                    <Button variant="ghost" size="sm" className="text-[#7D8590]" onClick={() => setShowAddUser(false)}>
-                      <X className="w-4 h-4" />
-                    </Button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                    <div>
-                      <label className="text-[#7D8590] text-sm block mb-1">Username</label>
-                      <Input value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="e.g. john_doe" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                    </div>
-                    <div>
-                      <label className="text-[#7D8590] text-sm block mb-1">Email</label>
-                      <Input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="john@example.com" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                    </div>
-                    <div>
-                      <label className="text-[#7D8590] text-sm block mb-1">Password</label>
-                      <Input type="password" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} placeholder="Min 8 characters" className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]" />
-                      <p className="text-xs text-[#7D8590] mt-1">Must be at least 8 characters long.</p>
-                    </div>
-                    <div>
-                      <label className="text-[#7D8590] text-sm block mb-1">Role</label>
-                      <Select value={newUserRole} onValueChange={setNewUserRole}>
-                        <SelectTrigger className="bg-[#161B22] border-[#30363D] text-[#E6EDF3]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent className="bg-[#161B22] border-[#30363D]">
-                          <SelectItem value="user" className="text-[#E6EDF3]">User</SelectItem>
-                          <SelectItem value="admin" className="text-[#E6EDF3]">Admin</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-                  <Button className="bg-[#3FB950] hover:bg-[#3FB950]/90 gap-2" onClick={handleCreateUser}>
-                    <CheckCircle className="w-4 h-4" /> Create User
-                  </Button>
-                </div>
-              )}
-
-              {/* User List */}
-              <div className="space-y-2">
-                {teamUsers.map((user: any) => (
-                  <div key={user.username} className="flex items-center justify-between bg-[#0D1117] rounded-lg px-4 py-3 border border-[#30363D]">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${user.role === 'admin' ? 'bg-[#FFA657]/20 text-[#FFA657]' : 'bg-[#58A6FF]/20 text-[#58A6FF]'
-                        }`}>
-                        {user.username?.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-[#E6EDF3]">{user.username}</span>
-                          {user.role === 'admin' && <Crown className="w-3 h-3 text-[#FFA657]" />}
-                        </div>
-                        <span className="text-[#7D8590] text-sm">{user.email}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Badge variant="outline" className={
-                        user.role === 'admin' ? 'border-[#FFA657] text-[#FFA657]' : 'border-[#58A6FF] text-[#58A6FF]'
-                      }>
-                        {user.role}
-                      </Badge>
-                      {user.account_locked && (
-                        <Badge variant="outline" className="border-[#FF4D4D] text-[#FF4D4D]">Locked</Badge>
-                      )}
-                      <Button
-                        variant="ghost" size="sm"
-                        className="text-[#58A6FF] hover:text-[#58A6FF]/80 gap-1"
-                        onClick={() => setResetUser(user.username)}
-                        title="Reset Password"
-                      >
-                        <Key className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        variant="ghost" size="sm"
-                        className="text-[#FF4D4D] hover:text-[#FF4D4D]/80 gap-1"
-                        onClick={() => handleDeleteUser(user.username)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
-
-      {/* Admin Reset Password Dialog */}
-      <Dialog open={!!resetUser} onOpenChange={(open) => { if (!open) setResetUser(null); setAdminResetPasswordValue(''); }}>
-        <DialogContent className="bg-[#161B22] border-[#30363D] text-[#E6EDF3] sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Reset Password</DialogTitle>
-            <DialogDescription className="text-[#7D8590]">
-              Enter a new strong password for <strong className="text-[#E6EDF3]">{resetUser}</strong>.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm text-[#C9D1D9]">New Password</label>
-              <Input
-                type="password"
-                value={adminResetPasswordValue}
-                onChange={(e) => setAdminResetPasswordValue(e.target.value)}
-                placeholder="Minimum 8 characters"
-                className="bg-[#0D1117] border-[#30363D] text-[#E6EDF3]"
-              />
-            </div>
-            <Button 
-              className="w-full bg-[#1F6FEB] hover:bg-[#1F6FEB]/90" 
-              onClick={handleAdminResetPassword}
-              disabled={isResettingPassword}
-            >
-              {isResettingPassword ? "Resetting..." : "Confirm Password Reset"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+    {/* Reset Modal */}
+    {resetUser&&<div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)'}} onClick={()=>{setResetUser(null);setAdminResetPw('')}}>
+      <div onClick={e=>e.stopPropagation()} style={{...C,padding:'24px 28px',width:400}}>
+        <div style={{color:'#E6EDF3',fontSize:16,fontWeight:700,marginBottom:6}}>Reset Password</div>
+        <div style={{color:'#7D8590',fontSize:12,marginBottom:16}}>New password for <span style={{color:'#E6EDF3',fontWeight:600}}>{resetUser}</span></div>
+        <div style={L}>New Password</div>
+        <input type="password" value={adminResetPw} onChange={e=>setAdminResetPw(e.target.value)} placeholder="Min 8 characters" style={{...I,marginBottom:14}}/>
+        <button disabled={isResetting} onClick={handleResetPw} style={{width:'100%',padding:'9px 0',borderRadius:8,border:'none',background:'linear-gradient(135deg,#1F6FEB,#2679f5)',color:'white',fontSize:13,fontWeight:600,fontFamily:'inherit',cursor:isResetting?'not-allowed':'pointer'}}>{isResetting?'Resetting…':'Confirm Reset'}</button>
+      </div>
+    </div>}
 
     </div>
-  );
+  </>);
 }
