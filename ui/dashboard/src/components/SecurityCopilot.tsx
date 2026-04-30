@@ -3,31 +3,20 @@ import { createPortal } from 'react-dom';
 import { X, Send, Bot, User, ArrowRight, MessageSquare, Minimize2, Sparkles, Download } from 'lucide-react';
 import { sendChatMessage } from '../services/api';
 
+import { downloadCSV } from '../utils/export';
+
 function triggerCSVFromMessage(content: string) {
-  // Parse the text report into CSV rows
+  // Parse the text report into structured rows for the shared CSV utility
   const rows: Record<string, string>[] = [];
-  const lines = content.split('\n').filter(l => l.trim().startsWith('•') || l.trim().match(/^\d+\./) );
+  const lines = content.split('\n').filter(l => l.trim().startsWith('•') || l.trim().match(/^\d+\./));
   lines.forEach(line => {
     const clean = line.replace(/^[•\d.\s*]+/, '').trim();
-    const parts = clean.split(/—|\|/);
-    if (parts.length >= 1) {
-      rows.push({ detail: clean.replace(/\*\*/g, '') });
-    }
+    rows.push({ detail: clean.replace(/\*\*/g, '') });
   });
   if (rows.length === 0) {
     rows.push({ report: content.replace(/\*\*/g, '').replace(/\n/g, ' ') });
   }
-  const headers = Object.keys(rows[0]);
-  const csv = [headers.join(','), ...rows.map(r => headers.map(h => `"${(r[h] || '').replace(/"/g, '""')}"`).join(','))].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `defenxion-report-${new Date().toISOString().slice(0,10)}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  downloadCSV(rows, `defenxion-report-${new Date().toISOString().slice(0, 10)}.csv`);
 }
 
 interface Message {
