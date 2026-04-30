@@ -186,7 +186,7 @@ export const getModelStats = async () => {
   return response.data;
 };
 
-export const trainNewModel = async (params?: { algorithm?: string; n_estimators?: number; max_depth?: number | null; sample_size?: number }) => {
+export const trainNewModel = async (params?: { algorithm?: string; dataset_name?: string; use_live_data?: boolean; n_estimators?: number; max_depth?: number | null; sample_size?: number }) => {
   const response = await api.post("/train", params || {});
   return response.data;
 };
