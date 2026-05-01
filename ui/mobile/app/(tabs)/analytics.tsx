@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, Dimensions, ActivityIndicator, Refr
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Theme from '../../constants/theme';
 import { fetchTrafficHistory, fetchTopSources } from '../../constants/api';
 
@@ -10,12 +11,12 @@ const { width } = Dimensions.get('window');
 const CHART_W = width - Theme.spacing.lg * 2 - 32;
 
 const chartConfig = {
-  backgroundGradientFrom: Theme.colors.surface,
-  backgroundGradientTo:   Theme.colors.surface,
+  backgroundGradientFrom: '#161B22',
+  backgroundGradientTo:   '#161B22',
   color: (opacity = 1) => `rgba(31, 111, 235, ${opacity})`,
   labelColor: (opacity = 1) => `rgba(125, 133, 144, ${opacity})`,
-  strokeWidth: 2,
-  propsForDots: { r: '3', strokeWidth: '1', stroke: Theme.colors.primary },
+  strokeWidth: 3,
+  propsForDots: { r: '4', strokeWidth: '2', stroke: '#161B22' },
   decimalPlaces: 0,
 };
 
@@ -81,7 +82,9 @@ export default function AnalyticsScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.colors.primary} />}>
 
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Live Analytics</Text>
+          <Text style={styles.headerTitle}>
+            Live<Text style={{ color: '#58A6FF' }}> Analytics</Text>
+          </Text>
           <Text style={styles.headerSub}>Rolling 20-min window · refreshes every 10s</Text>
         </View>
 
@@ -95,6 +98,7 @@ export default function AnalyticsScreen() {
         {/* Threat timeline */}
         {traffic.length > 0 ? (
           <View style={styles.card}>
+            <View style={[styles.cardAccent, { backgroundColor: Theme.colors.primary }]} />
             <Text style={styles.chartTitle}>Threats & Blocked / min</Text>
             <LineChart
               data={{
@@ -120,6 +124,7 @@ export default function AnalyticsScreen() {
         {/* Total events timeline */}
         {traffic.length > 0 && (
           <View style={[styles.card, { marginTop: Theme.spacing.lg }]}>
+            <View style={[styles.cardAccent, { backgroundColor: Theme.colors.success }]} />
             <Text style={styles.chartTitle}>Total Events / min</Text>
             <LineChart
               data={{ labels: lineLabels, datasets: [{ data: eventData.length ? eventData : [0] }] }}
@@ -136,6 +141,7 @@ export default function AnalyticsScreen() {
         {/* Top attacking IPs */}
         {sources.length > 0 ? (
           <View style={[styles.card, { marginTop: Theme.spacing.lg }]}>
+            <View style={[styles.cardAccent, { backgroundColor: Theme.colors.danger }]} />
             <Text style={styles.chartTitle}>Top Attacking IPs</Text>
             <BarChart
               data={{ labels: barLabels, datasets: [{ data: barData.length ? barData : [0] }] }}
@@ -166,11 +172,15 @@ export default function AnalyticsScreen() {
 
 function Chip({ icon, color, label, value }: { icon: any; color: string; label: string; value: number }) {
   return (
-    <View style={[styles.chip, { borderColor: color + '40', backgroundColor: color + '12' }]}>
+    <LinearGradient
+      colors={[`${color}25`, `${color}05`]}
+      start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+      style={[styles.chip, { borderColor: color + '40' }]}
+    >
       <Ionicons name={icon} size={16} color={color} />
       <Text style={[styles.chipValue, { color }]}>{value}</Text>
       <Text style={styles.chipLabel}>{label}</Text>
-    </View>
+    </LinearGradient>
   );
 }
 
@@ -196,7 +206,8 @@ const styles = StyleSheet.create({
   chipValue:      { fontSize: 18, fontWeight: 'bold' },
   chipLabel:      { color: Theme.colors.textMuted, fontSize: 10, fontWeight: '600' },
 
-  card:           { backgroundColor: Theme.colors.surface, padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: Theme.colors.border },
+  card:           { backgroundColor: '#161B22', padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: '#30363D', overflow: 'hidden', position: 'relative' },
+  cardAccent:     { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.8 },
   chartTitle:     { color: Theme.colors.text, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Theme.spacing.sm },
   chart:          { borderRadius: 12, marginTop: 4 },
 

@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, ActivityIndicator, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Theme from '../../constants/theme';
 import { fetchDashboardStats, fetchRecentAlerts } from '../../constants/api';
 
@@ -48,8 +49,10 @@ export default function HomeScreen() {
       setError(null);
     } catch (e: any) {
       const msg = e?.message || 'Unknown error';
-      console.error('Home fetch error:', msg);
-      if (!silent) setError(msg);
+      if (!msg.includes('401')) {
+        console.error('Home fetch error:', msg);
+        if (!silent) setError(msg);
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -83,7 +86,9 @@ export default function HomeScreen() {
         {/* ── Header ── */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.appName}>DEFENXION</Text>
+            <Text style={styles.appName}>
+              DEFEN<Text style={{ color: '#58A6FF' }}>XION</Text>
+            </Text>
             <Text style={styles.subTitle}>Dashboard Overview</Text>
           </View>
           <View style={[styles.chip, error ? styles.chipError : styles.chipLive]}>
@@ -106,16 +111,20 @@ export default function HomeScreen() {
         )}
 
         {/* ── Defense Status ── */}
-        <View style={[styles.statusCard, { borderColor: Theme.colors.success + '50' }]}>
-          <View style={[styles.statusIcon, { backgroundColor: Theme.colors.successDim }]}>
-            <Ionicons name="shield-checkmark" size={26} color={Theme.colors.success} />
+        <LinearGradient
+          colors={['rgba(63,185,80,0.15)', 'rgba(63,185,80,0.02)']}
+          start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+          style={[styles.statusCard, { borderColor: 'rgba(63,185,80,0.4)' }]}
+        >
+          <View style={[styles.statusIcon, { backgroundColor: 'rgba(63,185,80,0.2)' }]}>
+            <Ionicons name="shield-checkmark" size={24} color={Theme.colors.success} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.statusTitle}>Active Defense Mode</Text>
             <Text style={styles.statusSub}>System is autonomously blocking threats</Text>
           </View>
-          <View style={[styles.dot, { backgroundColor: Theme.colors.success, width: 10, height: 10 }]} />
-        </View>
+          <View style={[styles.dot, { backgroundColor: Theme.colors.success, width: 8, height: 8, ...(Platform.OS === 'web' ? { boxShadow: '0 0 10px rgba(63,185,80,0.8)' } : { elevation: 4, shadowColor: Theme.colors.success, shadowOpacity: 0.8, shadowRadius: 10 }) }]} />
+        </LinearGradient>
 
         {/* ── Stat Grid ── */}
         <Text style={styles.sectionTitle}>Overview</Text>
@@ -154,19 +163,23 @@ export default function HomeScreen() {
             const conf = alert.confidence; // already 0-100 from backend
             return (
               <View key={i} style={[styles.eventItem, { borderLeftColor: cfg.color }]}>
-                <View style={[styles.eventIcon, { backgroundColor: cfg.dim }]}>
+                <LinearGradient
+                  colors={[cfg.dim, 'rgba(0,0,0,0)']}
+                  start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  style={styles.eventIcon}
+                >
                   <Ionicons name={cfg.icon} size={18} color={cfg.color} />
-                </View>
+                </LinearGradient>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.eventTitle} numberOfLines={1}>
-                    {alert.status || alert.type || 'EVENT'} · {ip}
+                    {alert.status || alert.type || 'EVENT'} <Text style={{ color: Theme.colors.textMuted }}>· {ip}</Text>
                   </Text>
                   <Text style={styles.eventSub}>
                     {alert.type ? `${alert.type}  ` : ''}{timeAgo(alert.timestamp)}
                   </Text>
                 </View>
                 {conf != null && (
-                  <View style={[styles.confBadge, { backgroundColor: cfg.dim }]}>
+                  <View style={[styles.confBadge, { backgroundColor: cfg.dim, borderColor: cfg.color + '40', borderWidth: 1 }]}>
                     <Text style={[styles.confText, { color: cfg.color }]}>
                       {Math.round(conf)}%
                     </Text>
@@ -184,9 +197,16 @@ export default function HomeScreen() {
 function StatCard({ icon, color, value, label }: { icon: any; color: string; value: string; label: string }) {
   return (
     <View style={styles.gridCard}>
-      <View style={[styles.gridIconBox, { backgroundColor: color + '18' }]}>
+      {/* Top accent line */}
+      <View style={[styles.cardAccent, { backgroundColor: color }]} />
+      
+      <LinearGradient
+        colors={[`${color}25`, `${color}05`]}
+        start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+        style={styles.gridIconBox}
+      >
         <Ionicons name={icon} size={20} color={color} />
-      </View>
+      </LinearGradient>
       <Text style={styles.gridValue}>{value}</Text>
       <Text style={styles.gridLabel}>{label}</Text>
     </View>
@@ -224,7 +244,8 @@ const styles = s({
   updatedText:  { color: Theme.colors.textMuted, fontSize: 10 },
 
   grid:         { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: Theme.spacing.xl },
-  gridCard:     { backgroundColor: Theme.colors.surface, width: '47%', padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: Theme.colors.border },
+  gridCard:     { backgroundColor: '#161B22', width: '47%', padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: '#30363D', overflow: 'hidden', position: 'relative' },
+  cardAccent:   { position: 'absolute', top: 0, left: '15%', right: '15%', height: 2, opacity: 0.8 },
   gridIconBox:  { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: Theme.spacing.sm },
   gridValue:    { color: Theme.colors.text, fontSize: 24, fontWeight: '700', marginBottom: 2 },
   gridLabel:    { color: Theme.colors.textMuted, fontSize: 11, fontWeight: '600' },

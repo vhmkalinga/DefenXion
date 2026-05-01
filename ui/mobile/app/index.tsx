@@ -6,6 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Theme from '../constants/theme';
 import { login, BASE_URL } from '../constants/api';
 
@@ -42,9 +43,14 @@ export default function LoginScreen() {
         
         {/* Brand — matches web login */}
         <View style={styles.logoSection}>
-          <View style={styles.iconBox}>
-            <Ionicons name="shield-checkmark" size={22} color="#FFFFFF" />
-          </View>
+          <LinearGradient
+            colors={['#1F6FEB', '#58A6FF']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.iconBox}
+          >
+            <Ionicons name="shield" size={20} color="#FFFFFF" />
+          </LinearGradient>
           <Text style={styles.loginTitle}>
             Defen<Text style={{ color: '#58A6FF' }}>Xion</Text>
           </Text>
@@ -93,15 +99,22 @@ export default function LoginScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.loginButton} onPress={handleLogin} disabled={loading}>
-            {loading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.loginButtonText}>Sign In</Text>
-                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
-              </View>
-            )}
+          <TouchableOpacity onPress={handleLogin} disabled={loading} style={{ marginTop: 8 }}>
+            <LinearGradient
+              colors={['#1F6FEB', '#2679f5', '#58A6FF']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.loginButton}
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={styles.loginButtonText}>Sign In</Text>
+                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                </View>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
 
           <View style={styles.dividerBox}>
@@ -131,15 +144,13 @@ const styles = StyleSheet.create({
   
   logoSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: Theme.spacing.xxl, gap: 12 },
   iconBox: { 
-    width: 44, height: 44, borderRadius: 12, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1F6FEB',
-    // Use boxShadow for web compat, elevation for native
+    width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
     ...Platform.select({
-      web: {} as any,
-      default: { elevation: 8 },
+      web: { boxShadow: '0 4px 16px rgba(31,111,235,0.4)' } as any,
+      default: { elevation: 8, shadowColor: '#1F6FEB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
     }),
   },
-  loginTitle: { color: Theme.colors.text, fontSize: 24, fontWeight: 'bold', letterSpacing: -0.3 },
+  loginTitle: { color: Theme.colors.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.3 },
   
   formContainer: { 
     width: '100%', backgroundColor: '#161B22', padding: Theme.spacing.xl, borderRadius: 20, 
@@ -164,11 +175,10 @@ const styles = StyleSheet.create({
   input: { flex: 1, color: Theme.colors.text, fontSize: 14 },
   
   loginButton: { 
-    height: 50, borderRadius: 12, alignItems: 'center' as const, justifyContent: 'center' as const, 
-    backgroundColor: '#1F6FEB', marginTop: 8,
+    height: 50, borderRadius: 10, alignItems: 'center' as const, justifyContent: 'center' as const, 
     ...Platform.select({
-      web: {} as any,
-      default: { elevation: 6 },
+      web: { boxShadow: '0 4px 20px rgba(31,111,235,0.4)' } as any,
+      default: { elevation: 6, shadowColor: '#1F6FEB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
     }),
   },
   loginButtonText: { color: '#FFFFFF', fontWeight: 'bold' as const, fontSize: 15 },

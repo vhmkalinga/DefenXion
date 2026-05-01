@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import Theme from '../../constants/theme';
-import { fetchRecentAlerts } from '../../constants/api';
+import { fetchRecentAlerts, createFirewallRule } from '../../constants/api';
 
 function timeAgo(ts: string) {
   if (!ts) return '';
@@ -18,6 +19,8 @@ export default function ThreatsScreen() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [count, setCount]         = useState(0);
+  const [blockingIp, setBlockingIp] = useState<string | null>(null);
+  const [blockedIps, setBlockedIps] = useState<Set<string>>(new Set());
 
   const fetchAll = useCallback(async (silent = false) => {
     try {
@@ -26,8 +29,10 @@ export default function ThreatsScreen() {
         setAlerts(data);
         setCount(data.length);
       }
-    } catch (e) {
-      console.error('Alerts fetch error:', e);
+    } catch (e: any) {
+      if (!e.message?.includes('401')) {
+        console.error('Alerts fetch error:', e);
+      }
     } finally {
       if (!silent) setLoading(false);
       setRefreshing(false);
@@ -42,6 +47,24 @@ export default function ThreatsScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchAll(); };
 
+  const handleBlock = async (ip: string) => {
+    if (blockedIps.has(ip) || ip === 'Unknown') return;
+    setBlockingIp(ip);
+    try {
+      await createFirewallRule({
+        name: `Manual Block: ${ip}`,
+        priority: 'High',
+        action: 'DROP'
+      });
+      setBlockedIps(prev => new Set(prev).add(ip));
+      Alert.alert('Success', `Traffic from ${ip} is now blocked by the firewall.`);
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to block IP');
+    } finally {
+      setBlockingIp(null);
+    }
+  };
+
   const renderAlert = ({ item }: { item: any }) => {
     const isCritical = item.severity === 'Critical';
     const isHigh     = item.severity === 'High';
@@ -52,13 +75,20 @@ export default function ThreatsScreen() {
     const conf      = item.confidence; // already 0-100 from backend
 
     return (
-      <View style={[styles.card, { borderTopColor: color, borderLeftColor: colorDim }]}>
+      <View style={[styles.card, { borderColor: Theme.colors.border }]}>
+        <View style={[styles.cardAccent, { backgroundColor: color }]} />
         <View style={styles.cardHeader}>
           <View style={styles.headerLeft}>
-            <Ionicons name={iconName} size={16} color={color} />
+            <LinearGradient
+              colors={[colorDim, 'rgba(0,0,0,0)']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={styles.iconBox}
+            >
+              <Ionicons name={iconName} size={16} color={color} />
+            </LinearGradient>
             <Text style={styles.ipText}>{ip}</Text>
           </View>
-          <View style={[styles.badge, { backgroundColor: colorDim }]}>
+          <View style={[styles.badge, { backgroundColor: colorDim, borderColor: color + '40', borderWidth: 1 }]}>
             <Text style={[styles.badgeText, { color }]}>{item.severity?.toUpperCase() || 'MEDIUM'}</Text>
           </View>
         </View>
@@ -70,7 +100,11 @@ export default function ThreatsScreen() {
         {conf != null && (
           <View style={styles.confRow}>
             <View style={styles.confBarBg}>
-              <View style={[styles.confBarFill, { width: `${Math.round(conf)}%` as any, backgroundColor: color }]} />
+              <LinearGradient
+                colors={[`${color}88`, color]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={[styles.confBarFill, { width: `${Math.round(conf)}%` as any }]}
+              />
             </View>
             <Text style={[styles.confLabel, { color }]}>{Math.round(conf)}% conf</Text>
           </View>
@@ -78,8 +112,20 @@ export default function ThreatsScreen() {
 
         <View style={styles.cardBottom}>
           <Text style={styles.cardTime}>{timeAgo(item.timestamp)}</Text>
-          <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colorDim }]}>
-            <Text style={[styles.actionBtnText, { color }]}>BLOCK ORIGIN</Text>
+          <TouchableOpacity onPress={() => handleBlock(ip)} disabled={blockingIp === ip || blockedIps.has(ip) || ip === 'Unknown'}>
+            <LinearGradient
+              colors={[blockedIps.has(ip) ? Theme.colors.successDim : colorDim, 'rgba(0,0,0,0)']}
+              start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+              style={[styles.actionBtn, { borderColor: (blockedIps.has(ip) ? Theme.colors.success : color) + '40', borderWidth: 1 }]}
+            >
+              {blockingIp === ip ? (
+                <ActivityIndicator size="small" color={color} />
+              ) : (
+                <Text style={[styles.actionBtnText, { color: blockedIps.has(ip) ? Theme.colors.success : color }]}>
+                  {blockedIps.has(ip) ? 'BLOCKED' : 'BLOCK ORIGIN'}
+                </Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </View>
@@ -91,7 +137,9 @@ export default function ThreatsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View>
-          <Text style={styles.headerTitle}>Threat Intelligence</Text>
+          <Text style={styles.headerTitle}>
+            Threat<Text style={{ color: '#58A6FF' }}> Intelligence</Text>
+          </Text>
           <Text style={styles.headerSub}>{count} recent events</Text>
         </View>
         <View style={styles.liveBadge}>
@@ -136,11 +184,13 @@ const styles = StyleSheet.create({
 
   listContent:   { paddingHorizontal: Theme.spacing.lg, paddingBottom: 32, gap: Theme.spacing.md },
 
-  card:          { backgroundColor: Theme.colors.surface, padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: Theme.colors.border, borderTopWidth: 3 },
+  card:          { backgroundColor: '#161B22', padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: '#30363D', overflow: 'hidden', position: 'relative' },
+  cardAccent:    { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.8 },
   cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm },
-  headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  ipText:        { color: Theme.colors.text, fontSize: 15, fontWeight: 'bold', fontVariant: ['tabular-nums'] },
-  badge:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 },
+  headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  iconBox:       { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  ipText:        { color: Theme.colors.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  badge:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   badgeText:     { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
 
   actionText:    { color: Theme.colors.textMuted, fontSize: 13, fontFamily: 'monospace', marginBottom: Theme.spacing.sm },
