@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { router } from 'expo-router';
 
 // ── Token + credential store (survives Fast Refresh via global) ───────
 let _token: string | null       = (global as any).__dx_token    ?? null;
@@ -6,7 +7,7 @@ let _username: string | null    = (global as any).__dx_username ?? null;
 let _password: string | null    = (global as any).__dx_password ?? null;
 let _refreshing                 = false;   // prevent concurrent re-login loops
 
-export function setAuthToken(token: string) {
+export function setAuthToken(token: string | null) {
   _token = token;
   (global as any).__dx_token = token;
 }
@@ -66,6 +67,46 @@ async function get(path: string, retry = true): Promise<any> {
     // Token expired — silently re-authenticate and retry once
     const ok = await reLogin();
     if (ok) return get(path, false);   // one retry only
+    logout();
+    router.replace('/');
+    throw new Error(`401 ${path} — login required`);
+  }
+
+  if (!res.ok) throw new Error(`${res.status} ${path}`);
+  return res.json();
+}
+
+async function post(path: string, body: any, retry = true): Promise<any> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401 && retry) {
+    const ok = await reLogin();
+    if (ok) return post(path, body, false);
+    logout();
+    router.replace('/');
+    throw new Error(`401 ${path} — login required`);
+  }
+
+  if (!res.ok) throw new Error(`${res.status} ${path}`);
+  return res.json();
+}
+
+async function put(path: string, body: any, retry = true): Promise<any> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401 && retry) {
+    const ok = await reLogin();
+    if (ok) return put(path, body, false);
+    logout();
+    router.replace('/');
     throw new Error(`401 ${path} — login required`);
   }
 
@@ -89,8 +130,21 @@ export async function login(username: string, password: string) {
   return data;
 }
 
+export function logout() {
+  setAuthToken(null);
+  setCredentials('', '');
+}
+
 // ── Dashboard endpoints ───────────────────────────────────────────────
 export const fetchDashboardStats = () => get('/dashboard/stats');
 export const fetchRecentAlerts   = () => get('/dashboard/recent-alerts');
 export const fetchTrafficHistory = () => get('/dashboard/analytics/traffic');
 export const fetchTopSources     = () => get('/dashboard/analytics/top-sources');
+export const getSystemLogs       = (page = 1, limit = 50) => get(`/logs?page=${page}&limit=${limit}`);
+
+// ── Firewall & Defense ────────────────────────────────────────────────
+export const createFirewallRule  = (rule: { name: string; priority?: string; action?: string }) => post('/defense/firewall-rules', rule);
+
+// ── App Settings ──────────────────────────────────────────────────────
+export const getAppSettings      = () => get('/settings/app');
+export const updateAppSettings   = (settings: any) => put('/settings/app', settings);
