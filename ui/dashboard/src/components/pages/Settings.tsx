@@ -9,7 +9,7 @@ import { QRCodeSVG } from 'qrcode.react';
 export function Settings() {
   const { setDark } = useTheme();
   const [activeTab, setActiveTab] = useState('general');
-  const [settings, setSettings] = useState<any>({ organization_name:'DefenXion Security', timezone:'utc', dark_mode:true, notifications:{ critical_alerts:true, email_reports:true, slack_integration:false }, security:{ two_factor_enabled:false, session_timeout_minutes:30, ip_whitelist_enabled:false } });
+  const [settings, setSettings] = useState<any>({ organization_name:'DefenXion Security', timezone:'utc', dark_mode:true, reports: { auto_generate: true, frequency: 'weekly' }, notifications:{ critical_alerts:true, email_reports:true, slack_integration:false }, security:{ two_factor_enabled:false, session_timeout_minutes:30, ip_whitelist_enabled:false } });
   const [systemInfo, setSystemInfo] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -130,6 +130,23 @@ export function Settings() {
       <div style={S}><div style={L}>Organization Name</div><input value={settings.organization_name} onChange={e=>updateField('organization_name',e.target.value)} style={I}/></div>
       <div style={S}><div style={L}>Time Zone</div><div style={{display:'flex',alignItems:'center',gap:8}}><Globe size={14} color="#7D8590"/><select value={settings.timezone} onChange={e=>updateField('timezone',e.target.value)} style={{...I,cursor:'pointer',width:260}}>{[['utc','UTC'],['est','Eastern'],['cst','Central'],['mst','Mountain'],['pst','Pacific'],['gmt','GMT'],['cet','CET'],['ist','IST'],['jst','JST'],['aest','AEST']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>
       <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Dark Mode</div><div style={{color:'#7D8590',fontSize:12,marginTop:2}}>Use dark theme</div></div><Switch checked={settings.dark_mode} onCheckedChange={v=>{updateField('dark_mode',v);setDark(v)}}/></div>
+      <div style={S}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+          <div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Auto-Generate Reports</div><div style={{color:'#7D8590',fontSize:12,marginTop:1}}>Automatically generate and save security reports</div></div>
+          <Switch checked={settings.reports?.auto_generate !== false} onCheckedChange={v=>updateField('reports.auto_generate',v)}/>
+        </div>
+        {settings.reports?.auto_generate !== false && (
+          <div style={{marginTop:12,paddingLeft:2}}>
+            <div style={L}>Generation Frequency</div>
+            <select value={settings.reports?.frequency || 'weekly'} onChange={e=>updateField('reports.frequency',e.target.value)} style={{...I, cursor:'pointer', width: 200}}>
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+              <option value="all">All</option>
+            </select>
+          </div>
+        )}
+      </div>
     </div></div>}
 
     {/* Notifications */}
