@@ -6,12 +6,14 @@ from collections import defaultdict
 from time import time
 from pydantic import BaseModel
 import os
+import pyotp
 from dotenv import load_dotenv
 
 from backend.database import (
     users_collection,
     refresh_tokens_collection,
-    token_blacklist_collection
+    token_blacklist_collection,
+    app_settings_collection
 )
 from backend.auth.schemas import TokenResponse
 from backend.auth.security import (
@@ -57,7 +59,7 @@ login_attempt_tracker = defaultdict(list)
 # ==================================================
 # LOGIN
 # ==================================================
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 def login_user(
     request: Request,
     form_data: OAuth2PasswordRequestForm = Depends()
@@ -143,12 +145,76 @@ def login_user(
         }
     )
 
+    # ---------- 2FA CHECK ----------
+    if user.get("two_factor_enabled"):
+        temp_token = create_access_token({
+            "sub": user["username"],
+            "type": "2fa_temp"
+        }, expires_delta=timedelta(minutes=5))
+        return {
+            "two_factor_required": True,
+            "temp_token": temp_token
+        }
+
     # ---------- GENERATE TOKENS ----------
+    settings = app_settings_collection.find_one({"key": "app_settings"})
+    timeout = settings.get("security", {}).get("session_timeout_minutes", 30) if settings else 30
+
     access_token = create_access_token({
         "sub": user["username"],
         "role": user["role"],
         "type": "access"
+    }, expires_delta=timedelta(minutes=timeout))
+
+    refresh_token = create_refresh_token(user["username"])
+
+    refresh_tokens_collection.insert_one({
+        "username": user["username"],
+        "refresh_token": refresh_token,
+        "created_at": datetime.utcnow()
     })
+
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+# ==================================================
+# LOGIN 2FA
+# ==================================================
+class Login2FARequest(BaseModel):
+    temp_token: str
+    otp_code: str
+
+@router.post("/login/2fa")
+def login_2fa(data: Login2FARequest):
+    try:
+        payload = jwt.decode(data.temp_token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "2fa_temp":
+            raise HTTPException(status_code=401, detail="Invalid token type")
+        username = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid or expired temporary token")
+
+    user = users_collection.find_one({"username": username})
+    if not user or not user.get("two_factor_enabled"):
+        raise HTTPException(status_code=401, detail="2FA not enabled or user not found")
+
+    totp = pyotp.TOTP(user["two_factor_secret"])
+    if not totp.verify(data.otp_code, valid_window=1):
+        raise HTTPException(status_code=401, detail="Invalid 2FA code")
+
+    # ---------- GENERATE TOKENS ----------
+    settings = app_settings_collection.find_one({"key": "app_settings"})
+    timeout = settings.get("security", {}).get("session_timeout_minutes", 30) if settings else 30
+
+    access_token = create_access_token({
+        "sub": user["username"],
+        "role": user["role"],
+        "type": "access"
+    }, expires_delta=timedelta(minutes=timeout))
 
     refresh_token = create_refresh_token(user["username"])
 
@@ -201,11 +267,14 @@ def refresh_access_token(data: RefreshRequest):
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    settings = app_settings_collection.find_one({"key": "app_settings"})
+    timeout = settings.get("security", {}).get("session_timeout_minutes", 30) if settings else 30
+
     new_access_token = create_access_token({
         "sub": username,
         "role": user["role"],
         "type": "access"
-    })
+    }, expires_delta=timedelta(minutes=timeout))
 
     return {
         "access_token": new_access_token,
@@ -236,6 +305,76 @@ def logout(
 
 
 # ==================================================
+# 2FA SETUP & VERIFY
+# ==================================================
+@router.post("/2fa/setup")
+def setup_2fa(current_user: dict = Depends(get_current_user)):
+    user = users_collection.find_one({"username": current_user["username"]})
+    if user.get("two_factor_enabled"):
+        raise HTTPException(status_code=400, detail="2FA is already enabled")
+
+    secret = pyotp.random_base32()
+    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user["email"], issuer_name="DefenXion")
+
+    users_collection.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"temp_2fa_secret": secret}}
+    )
+
+    return {"secret": secret, "uri": uri}
+
+
+class VerifySetup2FARequest(BaseModel):
+    otp_code: str
+
+@router.post("/2fa/verify-setup")
+def verify_setup_2fa(data: VerifySetup2FARequest, current_user: dict = Depends(get_current_user)):
+    user = users_collection.find_one({"username": current_user["username"]})
+    secret = user.get("temp_2fa_secret")
+
+    if not secret:
+        raise HTTPException(status_code=400, detail="2FA setup not initiated")
+
+    totp = pyotp.TOTP(secret)
+    if not totp.verify(data.otp_code, valid_window=1):
+        raise HTTPException(status_code=400, detail="Invalid 2FA code")
+
+    users_collection.update_one(
+        {"username": current_user["username"]},
+        {
+            "$set": {"two_factor_enabled": True, "two_factor_secret": secret},
+            "$unset": {"temp_2fa_secret": ""}
+        }
+    )
+
+    return {"message": "2FA successfully enabled"}
+
+
+class Disable2FARequest(BaseModel):
+    password: str
+
+@router.post("/2fa/disable")
+def disable_2fa(data: Disable2FARequest, current_user: dict = Depends(get_current_user)):
+    user = users_collection.find_one({"username": current_user["username"]})
+    
+    if not user.get("two_factor_enabled"):
+        raise HTTPException(status_code=400, detail="2FA is not enabled")
+
+    if not verify_password(data.password, user["hashed_password"]):
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    users_collection.update_one(
+        {"username": current_user["username"]},
+        {
+            "$set": {"two_factor_enabled": False},
+            "$unset": {"two_factor_secret": "", "temp_2fa_secret": ""}
+        }
+    )
+
+    return {"message": "2FA successfully disabled"}
+
+
+# ==================================================
 # CURRENT USER PROFILE
 # ==================================================
 @router.get("/me")
@@ -252,6 +391,7 @@ def get_me(current_user: dict = Depends(get_current_user)):
         "phone": user.get("phone", ""),
         "location": user.get("location", ""),
         "avatar": user.get("avatar", ""),
+        "two_factor_enabled": user.get("two_factor_enabled", False),
         "login_history": user.get("login_history", []),
         "member_since": user.get("created_at", datetime.utcnow().strftime("%B %Y")) if isinstance(user.get("created_at"), str) else (user.get("created_at").strftime("%B %Y") if user.get("created_at") else datetime.utcnow().strftime("%B %Y"))
     }

@@ -43,6 +43,8 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:8081",
@@ -54,10 +56,28 @@ app.add_middleware(
 )
 
 # --------------------------------------------------
+# IP Whitelist Cache
+# --------------------------------------------------
+global_ip_whitelist_enabled = False
+global_ip_whitelist = ["127.0.0.1", "::1"]
+
+@app.middleware("http")
+async def ip_whitelist_middleware(request: Request, call_next):
+    if global_ip_whitelist_enabled:
+        client_ip = request.client.host if request.client else "Unknown"
+        forwarded = request.headers.get("X-Forwarded-For")
+        if forwarded:
+            client_ip = forwarded.split(",")[0].strip()
+        if client_ip not in global_ip_whitelist:
+            return JSONResponse(status_code=403, content={"detail": f"Access forbidden. IP {client_ip} is not in the whitelist."})
+    return await call_next(request)
+
+# --------------------------------------------------
 # Backend Imports (Absolute)
 # --------------------------------------------------
 from backend.auth.router import router as auth_router
 from backend.chat.router import router as chat_router
+from backend.scheduler import scheduler
 from backend.auth.dependencies import get_current_user, require_admin
 from backend.auth.security import hash_password, verify_password
 from backend.database import (
@@ -77,6 +97,24 @@ from backend.defenxion_response_engine import handle_event
 
 app.include_router(auth_router)
 app.include_router(chat_router)
+
+@app.on_event("startup")
+def startup_event():
+    global global_ip_whitelist_enabled, global_ip_whitelist
+    settings = app_settings_collection.find_one({"key": "app_settings"})
+    if settings and "security" in settings:
+        global_ip_whitelist_enabled = settings.get("security", {}).get("ip_whitelist_enabled", False)
+        global_ip_whitelist = settings.get("security", {}).get("ip_whitelist", ["127.0.0.1", "::1"])
+    
+    if not scheduler.running:
+        scheduler.start()
+        print("[INFO] Background scheduler started.")
+
+@app.on_event("shutdown")
+def shutdown_event():
+    if scheduler.running:
+        scheduler.shutdown()
+        print("[INFO] Background scheduler shut down.")
 
 # --------------------------------------------------
 # Global Exception Handler
@@ -607,13 +645,14 @@ _DEFAULT_APP_SETTINGS = {
     "notifications": {
         "critical_alerts": True,
         "email_reports": True,
-        "weekly_digest": True,
+        "email_report_frequency": "weekly",
         "slack_integration": False,
     },
     "security": {
         "two_factor_enabled": False,
         "session_timeout_minutes": 30,
         "ip_whitelist_enabled": False,
+        "ip_whitelist": ["127.0.0.1", "::1"],
     },
 }
 
@@ -629,6 +668,7 @@ def get_app_settings(current_user: dict = Depends(get_current_user)):
 
 @app.put("/settings/app")
 def update_app_settings(body: dict, current_user: dict = Depends(get_current_user)):
+    global global_ip_whitelist_enabled, global_ip_whitelist
     body.pop("key", None)
     app_settings_collection.update_one(
         {"key": "app_settings"},
@@ -636,6 +676,9 @@ def update_app_settings(body: dict, current_user: dict = Depends(get_current_use
         upsert=True
     )
     updated = app_settings_collection.find_one({"key": "app_settings"}, {"_id": 0})
+    if updated and "security" in updated:
+        global_ip_whitelist_enabled = updated.get("security", {}).get("ip_whitelist_enabled", False)
+        global_ip_whitelist = updated.get("security", {}).get("ip_whitelist", ["127.0.0.1", "::1"])
     return updated
 
 
