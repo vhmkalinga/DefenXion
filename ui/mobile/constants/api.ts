@@ -130,6 +130,25 @@ export async function login(username: string, password: string) {
   return data;
 }
 
+export async function login2FA(temp_token: string, otp_code: string, username: string, password_for_silent_refresh: string) {
+  const res = await fetch(`${BASE_URL}/auth/login/2fa`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ temp_token, otp_code }),
+  });
+  if (!res.ok) throw new Error('2FA Login failed');
+  const data = await res.json();
+  if (data.access_token) {
+    setAuthToken(data.access_token);
+    setCredentials(username, password_for_silent_refresh);
+  }
+  return data;
+}
+
+export const setup2FA = () => post('/auth/2fa/setup', {});
+export const verifySetup2FA = (otp_code: string) => post('/auth/2fa/verify-setup', { otp_code });
+export const disable2FA = (password: string) => post('/auth/2fa/disable', { password });
+
 export function logout() {
   setAuthToken(null);
   setCredentials('', '');
