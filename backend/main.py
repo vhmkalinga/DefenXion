@@ -518,13 +518,7 @@ def get_report_detail(report_id: str, current_user: dict = Depends(get_current_u
     return report
 
 
-@app.post("/reports/generate")
-def generate_report(
-    period: str = Query("daily", regex="^(daily|weekly|monthly|all|custom)$"),
-    start_date: str = Query(None),
-    end_date: str = Query(None),
-    current_user: dict = Depends(get_current_user)
-):
+def create_report_in_db(period: str, start_date: str = None, end_date: str = None, generated_by: str = "system"):
     now = datetime.now()
     report_id = f"RPT-{now.strftime('%Y')}-{reports_collection.count_documents({}) + 1:03d}"
 
@@ -600,10 +594,10 @@ def generate_report(
     report = {
         "report_id": report_id,
         "title": f"{title_prefix} Security Report — {now.strftime('%B %d, %Y')}",
-        "type": "Automated",
+        "type": "Automated" if generated_by == "system" else "Manual",
         "period_type": period,
         "generated_at": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "generated_by": current_user["username"],
+        "generated_by": generated_by,
         "period": period_label,
         "summary": {
             "total_detections": total_detections,
@@ -624,6 +618,15 @@ def generate_report(
     report.pop("_id", None)
     return report
 
+@app.post("/reports/generate")
+def generate_report(
+    period: str = Query("daily", regex="^(daily|weekly|monthly|all|custom)$"),
+    start_date: str = Query(None),
+    end_date: str = Query(None),
+    current_user: dict = Depends(get_current_user)
+):
+    return create_report_in_db(period, start_date, end_date, current_user["username"])
+
 
 
 @app.delete("/reports/{report_id}")
@@ -642,6 +645,10 @@ _DEFAULT_APP_SETTINGS = {
     "organization_name": "DefenXion Security",
     "timezone": "utc",
     "dark_mode": True,
+    "reports": {
+        "auto_generate": True,
+        "frequency": "weekly",
+    },
     "notifications": {
         "critical_alerts": True,
         "email_reports": True,
