@@ -48,7 +48,23 @@ def get_stats_for_period(period: str):
     return period_label, total_detections, total_blocks, top_ips
 
 async def dispatch_automated_report(frequency: str):
+    from backend.main import create_report_in_db
     settings = app_settings_collection.find_one({"key": "app_settings"}) or {}
+    
+    # 1. Generate Report in DB if enabled
+    reports_cfg = settings.get("reports", {})
+    auto_generate = reports_cfg.get("auto_generate", True)
+    report_freq = reports_cfg.get("frequency", "weekly")
+    
+    report_data = None
+    if auto_generate and (report_freq == "all" or report_freq == frequency):
+        try:
+            report_data = create_report_in_db(frequency, generated_by="system")
+            print(f"[SCHEDULER] Automatically generated {frequency} report in DB.")
+        except Exception as e:
+            print(f"[SCHEDULER] Failed to generate {frequency} report in DB: {e}")
+            
+    # 2. Send Email if enabled
     notifications = settings.get("notifications", {})
     
     if not notifications.get("email_reports"):
@@ -69,10 +85,16 @@ async def dispatch_automated_report(frequency: str):
     pw = smtp_cfg.get("password")
 
     if not (host and user and pw):
-        print(f"[SCHEDULER] Missing SMTP config for {frequency} report")
+        print(f"[SCHEDULER] Missing SMTP config for {frequency} report email")
         return
 
-    period_label, total_detections, total_blocks, top_ips = get_stats_for_period(frequency)
+    if report_data:
+        total_detections = report_data["summary"]["total_detections"]
+        total_blocks = report_data["summary"]["total_blocks"]
+        top_ips = ", ".join([f"{s['ip']} ({s['count']} hits)" for s in report_data["top_attack_sources"]]) if report_data["top_attack_sources"] else "None"
+        period_label = report_data["period"]
+    else:
+        period_label, total_detections, total_blocks, top_ips = get_stats_for_period(frequency)
 
     # Build Email
     msg = MIMEMultipart("alternative")
