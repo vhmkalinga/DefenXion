@@ -5,7 +5,11 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Theme from '../../constants/theme';
-import { getAppSettings, updateAppSettings, getSystemLogs, logout } from '../../constants/api';
+import { getAppSettings, updateAppSettings, getSystemLogs, logout, setup2FA, verifySetup2FA, disable2FA } from '../../constants/api';
+import { Modal, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as Linking from 'expo-linking';
+import QRCode from 'react-native-qrcode-svg';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -16,6 +20,15 @@ export default function ProfileScreen() {
   const [darkTheme, setDarkTheme] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // 2FA Modals
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [showDisableModal, setShowDisableModal] = useState(false);
+  const [twoFactorSecret, setTwoFactorSecret] = useState('');
+  const [twoFactorUri, setTwoFactorUri] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [disablePassword, setDisablePassword] = useState('');
+  const [is2FASaving, setIs2FASaving] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -44,15 +57,74 @@ export default function ProfileScreen() {
   }, []);
 
   const handleToggle = async (key: string, val: boolean, setter: any) => {
+    if (key === 'twoFactor') {
+      if (val) {
+        // Init Setup
+        try {
+          const data = await setup2FA();
+          setTwoFactorSecret(data.secret);
+          setTwoFactorUri(data.uri);
+          setShow2FAModal(true);
+        } catch (e: any) {
+          Alert.alert('Setup Failed', 'Could not initialize 2FA setup.');
+        }
+      } else {
+        setShowDisableModal(true);
+      }
+      return;
+    }
+
     setter(val);
     try {
-      if (key === 'twoFactor') await updateAppSettings({ security: { two_factor_enabled: val } });
       if (key === 'pushNotifs') await updateAppSettings({ notifications: { critical_alerts: val } });
       if (key === 'darkTheme') await updateAppSettings({ dark_mode: val });
     } catch (e) {
       setter(!val); // revert
       Alert.alert('Error', 'Failed to update setting');
     }
+  };
+
+  const handleVerify2FA = async () => {
+    if (otpCode.length !== 6) return;
+    setIs2FASaving(true);
+    try {
+      await verifySetup2FA(otpCode);
+      setTwoFactor(true);
+      setShow2FAModal(false);
+      setOtpCode('');
+      Alert.alert('Success', 'Two-Factor Authentication is now enabled.');
+    } catch (e: any) {
+      Alert.alert('Verification Failed', 'Invalid 2FA code.');
+    } finally {
+      setIs2FASaving(false);
+    }
+  };
+
+  const handleDisable2FA = async () => {
+    if (!disablePassword) return;
+    setIs2FASaving(true);
+    try {
+      await disable2FA(disablePassword);
+      setTwoFactor(false);
+      setShowDisableModal(false);
+      setDisablePassword('');
+      Alert.alert('Success', 'Two-Factor Authentication disabled.');
+    } catch (e: any) {
+      Alert.alert('Disable Failed', 'Incorrect password or server error.');
+    } finally {
+      setIs2FASaving(false);
+    }
+  };
+
+  const handleCopySecret = async () => {
+    await Clipboard.setStringAsync(twoFactorSecret);
+    Alert.alert('Copied', 'Secret key copied to clipboard.');
+  };
+
+  const handleOpenAuthApp = () => {
+    Linking.openURL(twoFactorUri).catch(() => {
+      Alert.alert('Error', 'No authenticator app found. Please copy the secret key instead.');
+    });
   };
 
   const handleLogout = () => {
@@ -198,6 +270,99 @@ export default function ProfileScreen() {
         </TouchableOpacity>
 
       </ScrollView>
+
+      {/* 2FA SETUP MODAL */}
+      <Modal visible={show2FAModal} transparent animationType="slide">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Enable 2FA</Text>
+              <TouchableOpacity onPress={() => { setShow2FAModal(false); setOtpCode(''); }}>
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              1. Scan this QR code or copy the secret key into your authenticator app.
+            </Text>
+
+            <View style={styles.qrContainer}>
+              {twoFactorUri ? <QRCode value={twoFactorUri} size={160} backgroundColor="white" /> : null}
+            </View>
+
+            <View style={styles.secretContainer}>
+              <Text style={styles.secretText}>{twoFactorSecret}</Text>
+              <TouchableOpacity style={styles.copyButton} onPress={handleCopySecret}>
+                <Ionicons name="copy-outline" size={16} color={Theme.colors.primary} />
+                <Text style={styles.copyButtonText}>Copy</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.openAppButton} onPress={handleOpenAuthApp}>
+              <Ionicons name="open-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.openAppText}>Open Authenticator App</Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.modalDescription, { marginTop: 16 }]}>
+              2. Enter the 6-digit code generated by the app.
+            </Text>
+
+            <TextInput
+              style={styles.otpInput}
+              placeholder="000000"
+              placeholderTextColor={Theme.colors.textMuted}
+              keyboardType="numeric"
+              maxLength={6}
+              value={otpCode}
+              onChangeText={t => setOtpCode(t.replace(/[^0-9]/g, ''))}
+            />
+
+            <TouchableOpacity 
+              onPress={handleVerify2FA} 
+              disabled={otpCode.length !== 6 || is2FASaving}
+              style={[styles.modalVerifyBtn, (otpCode.length !== 6 || is2FASaving) && styles.modalVerifyBtnDisabled]}
+            >
+              {is2FASaving ? <ActivityIndicator color="white" /> : <Text style={styles.modalVerifyText}>Verify & Enable</Text>}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* 2FA DISABLE MODAL */}
+      <Modal visible={showDisableModal} transparent animationType="fade">
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Disable 2FA</Text>
+              <TouchableOpacity onPress={() => { setShowDisableModal(false); setDisablePassword(''); }}>
+                <Ionicons name="close" size={24} color={Theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalDescription}>
+              Are you sure you want to disable two-factor authentication? Please enter your account password to confirm.
+            </Text>
+
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Account Password"
+              placeholderTextColor={Theme.colors.textMuted}
+              secureTextEntry
+              value={disablePassword}
+              onChangeText={setDisablePassword}
+            />
+
+            <TouchableOpacity 
+              onPress={handleDisable2FA} 
+              disabled={!disablePassword || is2FASaving}
+              style={[styles.modalVerifyBtn, { backgroundColor: Theme.colors.danger }, (!disablePassword || is2FASaving) && styles.modalVerifyBtnDisabled]}
+            >
+              {is2FASaving ? <ActivityIndicator color="white" /> : <Text style={styles.modalVerifyText}>Disable 2FA</Text>}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -229,5 +394,24 @@ const styles = StyleSheet.create({
   activityTime: { color: Theme.colors.textMuted, fontSize: 11 },
 
   logoutButton: { borderRadius: Theme.radii.lg, height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: Theme.colors.danger + '80', marginBottom: 50 },
-  logoutText: { color: Theme.colors.danger, fontSize: 15, fontWeight: 'bold', letterSpacing: 1, marginLeft: 8 }
+  logoutText: { color: Theme.colors.danger, fontSize: 15, fontWeight: 'bold', letterSpacing: 1, marginLeft: 8 },
+
+  // Modals
+  modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.7)' },
+  modalContent: { width: '85%', backgroundColor: '#161B22', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#30363D' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { color: Theme.colors.text, fontSize: 18, fontWeight: '700' },
+  modalDescription: { color: Theme.colors.textMuted, fontSize: 13, lineHeight: 20, marginBottom: 16 },
+  qrContainer: { alignSelf: 'center', padding: 16, backgroundColor: 'white', borderRadius: 12, marginBottom: 16 },
+  secretContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#0D1117', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#30363D', marginBottom: 16 },
+  secretText: { color: Theme.colors.text, fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 14, letterSpacing: 1, flex: 1 },
+  copyButton: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4, backgroundColor: `${Theme.colors.primary}20` },
+  copyButtonText: { color: Theme.colors.primary, fontSize: 12, fontWeight: 'bold' },
+  openAppButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Theme.colors.primary, paddingVertical: 12, borderRadius: 8, marginBottom: 16 },
+  openAppText: { color: 'white', fontSize: 14, fontWeight: 'bold' },
+  otpInput: { backgroundColor: '#0D1117', borderWidth: 1, borderColor: '#30363D', color: Theme.colors.text, fontSize: 24, letterSpacing: 8, textAlign: 'center', paddingVertical: 12, borderRadius: 8, marginBottom: 16 },
+  passwordInput: { backgroundColor: '#0D1117', borderWidth: 1, borderColor: '#30363D', color: Theme.colors.text, fontSize: 15, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 8, marginBottom: 16 },
+  modalVerifyBtn: { backgroundColor: Theme.colors.success, paddingVertical: 14, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  modalVerifyBtnDisabled: { opacity: 0.5 },
+  modalVerifyText: { color: 'white', fontSize: 15, fontWeight: 'bold' }
 });

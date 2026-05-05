@@ -8,15 +8,22 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import Theme from '../constants/theme';
-import { login, BASE_URL } from '../constants/api';
+import { login, login2FA, BASE_URL } from '../constants/api';
+import { saveCredentialsSecurely, getStoredCredentials, promptBiometricAuth } from '../utils/biometrics';
 
 export default function LoginScreen() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [bioLoading, setBioLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
-  const [focusedInput, setFocusedInput] = useState<'email' | 'password' | null>(null);
+  const [focusedInput, setFocusedInput] = useState<'email' | 'password' | 'otp' | null>(null);
+  
+  // 2FA state
+  const [step, setStep] = useState<'credentials' | '2fa'>('credentials');
+  const [tempToken, setTempToken] = useState('');
+  const [otpCode, setOtpCode] = useState('');
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -26,13 +33,66 @@ export default function LoginScreen() {
 
     setLoading(true);
     try {
-      // Uses api.ts login() which stores token + credentials for silent refresh
-      await login(email, password);
+      const data = await login(email, password);
+      
+      if (data.two_factor_required) {
+        setTempToken(data.temp_token);
+        setStep('2fa');
+        setLoading(false);
+        return;
+      }
+
+      await saveCredentialsSecurely(email, password);
       router.replace('/(tabs)');
     } catch (err) {
       Alert.alert('Access Denied', `Could not authenticate. Ensure the server is running.\n${BASE_URL}`);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handle2FASubmit = async () => {
+    if (otpCode.length !== 6) {
+      Alert.alert('Invalid Code', 'Please enter a 6-digit code.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await login2FA(tempToken, otpCode, email, password);
+      await saveCredentialsSecurely(email, password);
+      router.replace('/(tabs)');
+    } catch (err) {
+      Alert.alert('Verification Failed', 'Invalid 2FA code.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBiometricLogin = async () => {
+    setBioLoading(true);
+    try {
+      const stored = await getStoredCredentials();
+      if (!stored || !stored.username || !stored.password) {
+        Alert.alert('Setup Required', 'Please log in with your username and password first to enable biometric authentication.');
+        return;
+      }
+
+      const authResult = await promptBiometricAuth();
+      if (!authResult.success) {
+        if (authResult.error && !authResult.error.includes('cancel')) {
+           Alert.alert('Biometric Error', authResult.error);
+        }
+        return;
+      }
+
+      // Biometric success, now authenticate with API
+      await login(stored.username, stored.password);
+      router.replace('/(tabs)');
+    } catch (err) {
+      Alert.alert('Access Denied', 'Authentication failed after biometric verification.');
+    } finally {
+      setBioLoading(false);
     }
   };
 
@@ -60,73 +120,131 @@ export default function LoginScreen() {
           {/* Top accent line */}
           <View style={styles.accentLine} />
           
-          <Text style={styles.welcomeText}>Sign in to your security dashboard</Text>
+          <Text style={styles.welcomeText}>
+            {step === 'credentials' ? 'Sign in to your security dashboard' : 'Enter the 6-digit code from your authenticator app.'}
+          </Text>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>USERNAME</Text>
-            <View style={[styles.inputContainer, focusedInput === 'email' && styles.inputFocused]}>
-              <Ionicons name="person-outline" size={18} color={focusedInput === 'email' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter username"
-                placeholderTextColor={Theme.colors.border}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                onFocus={() => setFocusedInput('email')}
-                onBlur={() => setFocusedInput(null)}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>PASSWORD</Text>
-            <View style={[styles.inputContainer, focusedInput === 'password' && styles.inputFocused]}>
-              <Ionicons name="lock-closed-outline" size={18} color={focusedInput === 'password' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Enter password"
-                placeholderTextColor={Theme.colors.border}
-                secureTextEntry={!showPw}
-                value={password}
-                onChangeText={setPassword}
-                onFocus={() => setFocusedInput('password')}
-                onBlur={() => setFocusedInput(null)}
-              />
-              <TouchableOpacity onPress={() => setShowPw(!showPw)}>
-                 <Ionicons name={showPw ? "eye-outline" : "eye-off-outline"} size={18} color={Theme.colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <TouchableOpacity onPress={handleLogin} disabled={loading} style={{ marginTop: 8 }}>
-            <LinearGradient
-              colors={['#1F6FEB', '#2679f5', '#58A6FF']}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.loginButton}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
-              ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <Text style={styles.loginButtonText}>Sign In</Text>
-                  <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+          {step === 'credentials' ? (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>USERNAME</Text>
+                <View style={[styles.inputContainer, focusedInput === 'email' && styles.inputFocused]}>
+                  <Ionicons name="person-outline" size={18} color={focusedInput === 'email' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter username"
+                    placeholderTextColor={Theme.colors.border}
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    onFocus={() => setFocusedInput('email')}
+                    onBlur={() => setFocusedInput(null)}
+                  />
                 </View>
-              )}
-            </LinearGradient>
-          </TouchableOpacity>
+              </View>
 
-          <View style={styles.dividerBox}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>PASSWORD</Text>
+                <View style={[styles.inputContainer, focusedInput === 'password' && styles.inputFocused]}>
+                  <Ionicons name="lock-closed-outline" size={18} color={focusedInput === 'password' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Enter password"
+                    placeholderTextColor={Theme.colors.border}
+                    secureTextEntry={!showPw}
+                    value={password}
+                    onChangeText={setPassword}
+                    onFocus={() => setFocusedInput('password')}
+                    onBlur={() => setFocusedInput(null)}
+                  />
+                  <TouchableOpacity onPress={() => setShowPw(!showPw)}>
+                     <Ionicons name={showPw ? "eye-outline" : "eye-off-outline"} size={18} color={Theme.colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+              </View>
 
-          <TouchableOpacity style={styles.biometricButton}>
-             <Ionicons name="finger-print" size={20} color={Theme.colors.text} />
-             <Text style={styles.biometricText}>Biometric Login</Text>
-          </TouchableOpacity>
+              <TouchableOpacity onPress={handleLogin} disabled={loading} style={{ marginTop: 8 }}>
+                <LinearGradient
+                  colors={['#1F6FEB', '#2679f5', '#58A6FF']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.loginButton}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFFFFF" />
+                  ) : (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={styles.loginButtonText}>Sign In</Text>
+                      <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+                    </View>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <View style={styles.dividerBox}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity style={styles.biometricButton} onPress={handleBiometricLogin} disabled={bioLoading || loading}>
+                 {bioLoading ? (
+                   <ActivityIndicator color={Theme.colors.text} size="small" />
+                 ) : (
+                   <>
+                     <Ionicons name="finger-print" size={20} color={Theme.colors.text} />
+                     <Text style={styles.biometricText}>Biometric Login</Text>
+                   </>
+                 )}
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>AUTHENTICATOR CODE</Text>
+                <View style={[styles.inputContainer, focusedInput === 'otp' && styles.inputFocused]}>
+                  <Ionicons name="keypad-outline" size={18} color={focusedInput === 'otp' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                  <TextInput
+                    style={[styles.input, { letterSpacing: 8, fontSize: 18 }]}
+                    placeholder="000000"
+                    placeholderTextColor={Theme.colors.border}
+                    keyboardType="numeric"
+                    maxLength={6}
+                    value={otpCode}
+                    onChangeText={(text) => setOtpCode(text.replace(/[^0-9]/g, ''))}
+                    onFocus={() => setFocusedInput('otp')}
+                    onBlur={() => setFocusedInput(null)}
+                  />
+                </View>
+              </View>
+
+              <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+                <TouchableOpacity 
+                  onPress={() => { setStep('credentials'); setOtpCode(''); setTempToken(''); }}
+                  style={[styles.biometricButton, { flex: 1, height: 50, marginTop: 0 }]}
+                >
+                  <Text style={styles.biometricText}>Back</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={handle2FASubmit} disabled={loading || otpCode.length !== 6} style={{ flex: 1 }}>
+                  <LinearGradient
+                    colors={['#1F6FEB', '#2679f5', '#58A6FF']}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={[styles.loginButton, { opacity: (loading || otpCode.length !== 6) ? 0.6 : 1 }]}
+                  >
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" />
+                    ) : (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <Text style={styles.loginButtonText}>Verify</Text>
+                        <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                      </View>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
         </View>
 
         <View style={styles.footer}>
