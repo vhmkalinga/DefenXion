@@ -348,6 +348,27 @@ export const updateMe = async (data: { full_name?: string; email?: string; phone
   return response.data;
 };
 
+// ── 2FA ──
+export const login2FA = async (temp_token: string, otp_code: string) => {
+  const response = await api.post("/auth/login/2fa", { temp_token, otp_code });
+  return response.data;
+};
+
+export const setup2FA = async () => {
+  const response = await api.post("/auth/2fa/setup");
+  return response.data;
+};
+
+export const verifySetup2FA = async (otp_code: string) => {
+  const response = await api.post("/auth/2fa/verify-setup", { otp_code });
+  return response.data;
+};
+
+export const disable2FA = async (password: string) => {
+  const response = await api.post("/auth/2fa/disable", { password });
+  return response.data;
+};
+
 // ── Security Copilot ──
 export const sendChatMessage = async (message: string) => {
   const response = await api.post("/chat", { message });
