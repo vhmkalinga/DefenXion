@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Calendar, Shield, Award, Activity, Camera, Upload, X, Loader2 } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Calendar, Shield, Award, Activity, Camera, Upload, X, Loader2, Key, Lock, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { getMe, updateMe } from '../../services/api';
 
@@ -23,7 +23,7 @@ export function Profile() {
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const [profile, setProfile] = useState<any>({ username:'...', role:'...', full_name:'...', email:'...', phone:'...', location:'...', member_since:'...' });
+  const [profile, setProfile] = useState<any>({ username:'...', role:'...', full_name:'...', email:'...', phone:'...', location:'...', member_since:'...', two_factor_enabled: false });
   const [form, setForm] = useState({ full_name:'', email:'', phone:'', location:'', avatar:'' });
 
   useEffect(() => { getMe().then(d => { setProfile(d); setForm({ full_name:d.full_name||'', email:d.email||'', phone:d.phone||'', location:d.location||'', avatar:d.avatar||'' }); }).catch(console.error); }, []);

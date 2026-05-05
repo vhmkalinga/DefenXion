@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
-import { Shield, Lock, Eye, EyeOff, User, AlertCircle, Loader2, Wifi, WifiOff } from "lucide-react";
+import { Shield, Lock, Eye, EyeOff, User, AlertCircle, Loader2, Wifi, WifiOff, KeyRound } from "lucide-react";
 import axios from "axios";
+import { login2FA } from "../../services/api";
+import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "../ui/input-otp";
 
 interface LoginProps {
   onLogin: () => void;
@@ -159,6 +161,10 @@ export function Login({ onLogin }: LoginProps) {
   const [shake, setShake] = useState(false);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
+  const [step, setStep] = useState<"credentials" | "2fa">("credentials");
+  const [tempToken, setTempToken] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+
   // Check backend connectivity once
   useEffect(() => {
     axios.get("http://localhost:8000/", { timeout: 3000 })
@@ -182,6 +188,13 @@ export function Login({ onLogin }: LoginProps) {
         { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
       );
 
+      if (response.data.two_factor_required) {
+        setTempToken(response.data.temp_token);
+        setStep("2fa");
+        setIsLoading(false);
+        return;
+      }
+
       localStorage.setItem("access_token", response.data.access_token);
       localStorage.setItem("refresh_token", response.data.refresh_token);
 
@@ -201,6 +214,26 @@ export function Login({ onLogin }: LoginProps) {
       } else {
         setError("Cannot reach the server. Make sure the backend is running.");
       }
+    }
+  };
+
+  const handle2FASubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (otpCode.length !== 6) return;
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const response = await login2FA(tempToken, otpCode);
+      localStorage.setItem("access_token", response.access_token);
+      localStorage.setItem("refresh_token", response.refresh_token);
+      setIsLoading(false);
+      onLogin();
+    } catch (err: any) {
+      setIsLoading(false);
+      setShake(true);
+      setTimeout(() => setShake(false), 600);
+      setError("Invalid 2FA code.");
     }
   };
 
@@ -415,151 +448,212 @@ export function Login({ onLogin }: LoginProps) {
                   </div>
                 )}
 
-                {/* Username */}
-                <div>
-                  <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
-                    Username
-                  </label>
-                  <div style={{ position: "relative" }}>
-                    <User
-                      size={15}
-                      color={focusedField === "username" ? "#58A6FF" : "#7D8590"}
-                      style={{
-                        position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)",
-                        transition: "color 0.2s",
-                      }}
-                    />
-                    <input
-                      id="username"
-                      type="text"
-                      placeholder="Enter username"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      onFocus={() => setFocusedField("username")}
-                      onBlur={() => setFocusedField(null)}
-                      style={fieldStyle("username")}
-                      required
-                      autoComplete="username"
-                    />
-                  </div>
-                </div>
+                {step === "credentials" ? (
+                  <>
+                    {/* Username */}
+                    <div>
+                      <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
+                        Username
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <User
+                          size={15}
+                          color={focusedField === "username" ? "#58A6FF" : "#7D8590"}
+                          style={{
+                            position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)",
+                            transition: "color 0.2s",
+                          }}
+                        />
+                        <input
+                          id="username"
+                          type="text"
+                          placeholder="Enter username"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          onFocus={() => setFocusedField("username")}
+                          onBlur={() => setFocusedField(null)}
+                          style={fieldStyle("username")}
+                          required
+                          autoComplete="username"
+                        />
+                      </div>
+                    </div>
 
-                {/* Password */}
-                <div>
-                  <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
-                    Password
-                  </label>
-                  <div style={{ position: "relative" }}>
-                    <Lock
-                      size={15}
-                      color={focusedField === "password" ? "#58A6FF" : "#7D8590"}
-                      style={{
-                        position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)",
-                        transition: "color 0.2s",
-                      }}
-                    />
-                    <input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter password"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      onFocus={() => setFocusedField("password")}
-                      onBlur={() => setFocusedField(null)}
-                      style={{ ...fieldStyle("password"), paddingRight: 44 }}
-                      required
-                      autoComplete="current-password"
-                    />
+                    {/* Password */}
+                    <div>
+                      <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>
+                        Password
+                      </label>
+                      <div style={{ position: "relative" }}>
+                        <Lock
+                          size={15}
+                          color={focusedField === "password" ? "#58A6FF" : "#7D8590"}
+                          style={{
+                            position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)",
+                            transition: "color 0.2s",
+                          }}
+                        />
+                        <input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Enter password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          onFocus={() => setFocusedField("password")}
+                          onBlur={() => setFocusedField(null)}
+                          style={{ ...fieldStyle("password"), paddingRight: 44 }}
+                          required
+                          autoComplete="current-password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          style={{
+                            position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
+                            background: "none", border: "none", cursor: "pointer",
+                            color: "#7D8590", display: "flex", alignItems: "center",
+                            padding: 4,
+                            transition: "color 0.2s",
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.color = "#C9D1D9")}
+                          onMouseLeave={(e) => (e.currentTarget.style.color = "#7D8590")}
+                        >
+                          {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Remember + Forgot */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          style={{
+                            width: 15, height: 15, accentColor: "#1F6FEB",
+                            borderRadius: 4, cursor: "pointer",
+                          }}
+                        />
+                        <span style={{ color: "#7D8590", fontSize: 13 }}>Remember me</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => alert("Contact your system administrator to reset your password.")}
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "#58A6FF", fontSize: 13, fontFamily: "inherit",
+                          padding: 0,
+                          transition: "color 0.2s",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.color = "#1F6FEB")}
+                        onMouseLeave={(e) => (e.currentTarget.style.color = "#58A6FF")}
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+
+                    {/* Submit */}
                     <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
+                      type="submit"
+                      disabled={isLoading || !username || !password}
                       style={{
-                        position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)",
-                        background: "none", border: "none", cursor: "pointer",
-                        color: "#7D8590", display: "flex", alignItems: "center",
-                        padding: 4,
-                        transition: "color 0.2s",
+                        width: "100%",
+                        padding: "13px",
+                        borderRadius: 10,
+                        border: "none",
+                        cursor: isLoading || !username || !password ? "not-allowed" : "pointer",
+                        background: isLoading || !username || !password
+                          ? "rgba(31,111,235,0.35)"
+                          : "linear-gradient(135deg, #1F6FEB 0%, #2679f5 50%, #58A6FF 100%)",
+                        color: "white",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        fontFamily: "inherit",
+                        letterSpacing: "0.01em",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 8,
+                        transition: "all 0.2s ease",
+                        boxShadow: !isLoading && username && password
+                          ? "0 4px 20px rgba(31,111,235,0.4)"
+                          : "none",
+                        marginTop: 4,
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.color = "#C9D1D9")}
-                      onMouseLeave={(e) => (e.currentTarget.style.color = "#7D8590")}
+                      onMouseEnter={(e) => {
+                        if (!isLoading && username && password) {
+                          (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
+                          (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 28px rgba(31,111,235,0.55)";
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
+                        (e.currentTarget as HTMLButtonElement).style.boxShadow = username && password ? "0 4px 20px rgba(31,111,235,0.4)" : "none";
+                      }}
                     >
-                      {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+                      {isLoading
+                        ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Authenticating…</>
+                        : "Sign In →"
+                      }
                     </button>
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
+                      <div style={{ color: "#E6EDF3", fontSize: 15, fontWeight: 500 }}>Two-Factor Authentication</div>
+                      <p style={{ color: "#7D8590", fontSize: 13, textAlign: "center", marginBottom: 8 }}>
+                        Enter the 6-digit code from your authenticator app.
+                      </p>
+                      
+                      <InputOTP maxLength={6} value={otpCode} onChange={setOtpCode}>
+                        <InputOTPGroup>
+                          <InputOTPSlot index={0} style={{ width: 45, height: 50, fontSize: 18 }} />
+                          <InputOTPSlot index={1} style={{ width: 45, height: 50, fontSize: 18 }} />
+                          <InputOTPSlot index={2} style={{ width: 45, height: 50, fontSize: 18 }} />
+                        </InputOTPGroup>
+                        <InputOTPSeparator />
+                        <InputOTPGroup>
+                          <InputOTPSlot index={3} style={{ width: 45, height: 50, fontSize: 18 }} />
+                          <InputOTPSlot index={4} style={{ width: 45, height: 50, fontSize: 18 }} />
+                          <InputOTPSlot index={5} style={{ width: 45, height: 50, fontSize: 18 }} />
+                        </InputOTPGroup>
+                      </InputOTP>
+                    </div>
 
-                {/* Remember + Forgot */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      style={{
-                        width: 15, height: 15, accentColor: "#1F6FEB",
-                        borderRadius: 4, cursor: "pointer",
-                      }}
-                    />
-                    <span style={{ color: "#7D8590", fontSize: 13 }}>Remember me</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => alert("Contact your system administrator to reset your password.")}
-                    style={{
-                      background: "none", border: "none", cursor: "pointer",
-                      color: "#58A6FF", fontSize: 13, fontFamily: "inherit",
-                      padding: 0,
-                      transition: "color 0.2s",
-                    }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "#1F6FEB")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "#58A6FF")}
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-
-                {/* Submit */}
-                <button
-                  type="submit"
-                  disabled={isLoading || !username || !password}
-                  style={{
-                    width: "100%",
-                    padding: "13px",
-                    borderRadius: 10,
-                    border: "none",
-                    cursor: isLoading || !username || !password ? "not-allowed" : "pointer",
-                    background: isLoading || !username || !password
-                      ? "rgba(31,111,235,0.35)"
-                      : "linear-gradient(135deg, #1F6FEB 0%, #2679f5 50%, #58A6FF 100%)",
-                    color: "white",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    fontFamily: "inherit",
-                    letterSpacing: "0.01em",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    transition: "all 0.2s ease",
-                    boxShadow: !isLoading && username && password
-                      ? "0 4px 20px rgba(31,111,235,0.4)"
-                      : "none",
-                    marginTop: 4,
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isLoading && username && password) {
-                      (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
-                      (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 8px 28px rgba(31,111,235,0.55)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
-                    (e.currentTarget as HTMLButtonElement).style.boxShadow = username && password ? "0 4px 20px rgba(31,111,235,0.4)" : "none";
-                  }}
-                >
-                  {isLoading
-                    ? <><Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> Authenticating…</>
-                    : "Sign In →"
-                  }
-                </button>
+                    <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+                      <button
+                        type="button"
+                        onClick={() => { setStep("credentials"); setOtpCode(""); setTempToken(""); setError(""); }}
+                        style={{
+                          flex: 1, padding: "13px", borderRadius: 10, border: "1px solid rgba(48,54,61,0.8)",
+                          background: "transparent", color: "#E6EDF3", fontSize: 14, fontWeight: 600,
+                          cursor: "pointer", transition: "background 0.2s"
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        Back
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handle2FASubmit}
+                        disabled={isLoading || otpCode.length !== 6}
+                        style={{
+                          flex: 1, padding: "13px", borderRadius: 10, border: "none",
+                          cursor: isLoading || otpCode.length !== 6 ? "not-allowed" : "pointer",
+                          background: isLoading || otpCode.length !== 6
+                            ? "rgba(31,111,235,0.35)"
+                            : "linear-gradient(135deg, #1F6FEB 0%, #2679f5 50%, #58A6FF 100%)",
+                          color: "white", fontSize: 14, fontWeight: 600,
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          transition: "all 0.2s ease"
+                        }}
+                      >
+                        {isLoading ? <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> : <KeyRound size={16} />}
+                        Verify
+                      </button>
+                    </div>
+                  </>
+                )}
               </form>
             </div>
 
