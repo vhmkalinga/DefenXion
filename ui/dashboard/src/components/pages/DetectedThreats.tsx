@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import {
   Search, Download, Eye, RefreshCw, ShieldAlert,
   ShieldCheck, AlertTriangle, Info, Filter, X,
-  ChevronUp, ChevronDown, Clock, Cpu, Globe,
+  ChevronUp, ChevronDown, Clock, Cpu, Globe, Printer,
 } from 'lucide-react';
 import {
   PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
@@ -141,7 +141,7 @@ export function DetectedThreats() {
   const fetchThreats = (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
-    getAllThreats(1, 200)
+    getAllThreats(1, 100)
       .then(res => { if (res?.data) setThreats(res.data); })
       .catch(console.error)
       .finally(() => { setLoading(false); setRefreshing(false); });
@@ -198,6 +198,114 @@ export function DetectedThreats() {
     if (sortKey === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
     else { setSortKey(col); setSortDir('desc'); }
     setPage(1);
+  };
+
+  const handleDownloadPDF = async () => {
+    try {
+      const { toast } = await import('sonner');
+      toast.info('Generating PDF...');
+
+      const rowsHtml = filtered.map(t => `
+        <tr>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px;font-family:monospace;color:#1a6ef5">${t.id || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px">${t.timestamp || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px;font-weight:600">${t.type || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px">
+            <span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;color:${
+              t.severity==='Critical'?'#d73a49':t.severity==='High'?'#e36209':t.severity==='Medium'?'#b08800':'#1a6ef5'
+            };background:${
+              t.severity==='Critical'?'#ffeef0':t.severity==='High'?'#fff5e6':t.severity==='Medium'?'#fffbe6':'#e8f0fe'
+            };border:1px solid ${
+              t.severity==='Critical'?'#f9b2b8':t.severity==='High'?'#ffcc99':t.severity==='Medium'?'#ffe59a':'#b3cfff'
+            }">${t.severity}</span>
+          </td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px;font-family:monospace">${t.sourceIp || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px">${t.targetPort || '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px">${t.confidence != null ? t.confidence + '%' : '-'}</td>
+          <td style="border:1px solid #ddd;padding:8px 12px;font-size:12px">
+            <span style="padding:2px 8px;border-radius:20px;font-size:11px;font-weight:700;color:${
+              t.status==='Blocked'?'#d73a49':t.status==='Flagged'?'#e36209':t.status==='Quarantined'?'#b08800':'#555'
+            }">${t.status || '-'}</span>
+          </td>
+        </tr>
+      `).join('');
+
+      const now = new Date().toLocaleString();
+      const element = document.createElement('div');
+      element.innerHTML = `
+        <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#333;padding:40px;background:#fff;">
+          <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #eee;padding-bottom:14px;margin-bottom:20px;">
+            <div>
+              <h1 style="margin:0;font-size:22px;color:#1a1a1a;">Detected Threats Report</h1>
+              <p style="margin:4px 0 0;font-size:13px;color:#555;">ML-classified network intrusions snapshot</p>
+            </div>
+            <div style="font-size:12px;color:#888;text-align:right;">Generated: ${now}<br/>Total shown: ${filtered.length} threats</div>
+          </div>
+
+          <div style="display:flex;gap:14px;margin-bottom:28px;">
+            <div style="flex:1;border:1px solid #eaeaea;padding:14px;border-radius:8px;background:#fafafa">
+              <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px">Total Threats</div>
+              <div style="font-size:26px;font-weight:700;color:#1a6ef5;margin-top:4px">${counts.total}</div>
+            </div>
+            <div style="flex:1;border:1px solid #eaeaea;padding:14px;border-radius:8px;background:#fafafa">
+              <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px">Critical</div>
+              <div style="font-size:26px;font-weight:700;color:#d73a49;margin-top:4px">${counts.critical}</div>
+            </div>
+            <div style="flex:1;border:1px solid #eaeaea;padding:14px;border-radius:8px;background:#fafafa">
+              <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px">High Severity</div>
+              <div style="font-size:26px;font-weight:700;color:#e36209;margin-top:4px">${counts.high}</div>
+            </div>
+            <div style="flex:1;border:1px solid #eaeaea;padding:14px;border-radius:8px;background:#fafafa">
+              <div style="font-size:11px;color:#666;text-transform:uppercase;letter-spacing:.5px">Blocked</div>
+              <div style="font-size:26px;font-weight:700;color:#22863a;margin-top:4px">${counts.blocked}</div>
+            </div>
+          </div>
+
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f5f5f5;">
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">THREAT ID</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">TIME</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">TYPE</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">SEVERITY</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">SOURCE IP</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">PORT</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">CONFIDENCE</th>
+                <th style="border:1px solid #ddd;padding:9px 12px;text-align:left;font-size:11px;font-weight:700;color:#555;letter-spacing:.06em;">STATUS</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+          </table>
+
+          <div style="margin-top:32px;font-size:11px;color:#aaa;text-align:center;border-top:1px solid #eee;padding-top:10px;">
+            Generated by DefenXion Security Platform · Confidential
+          </div>
+        </div>
+      `;
+
+      const html2pdf = (await import('html2pdf.js')).default;
+      const filename = `DefenXion-Threats-${new Date().toISOString().slice(0,10)}.pdf`;
+      await html2pdf().set({
+        margin: 0.4,
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
+          onclone: (clonedDoc: any) => {
+            clonedDoc.querySelectorAll('style, link[rel="stylesheet"]').forEach((s: any) => s.remove());
+          }
+        },
+        jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
+      }).from(element).save();
+      toast.success('Downloaded PDF');
+    } catch (e) {
+      console.error(e);
+      const { toast } = await import('sonner');
+      toast.error('Failed to generate PDF');
+    }
   };
 
   const activeFilters = [
@@ -258,6 +366,20 @@ export function DetectedThreats() {
               onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
             >
               <Download size={13} /> Export CSV
+            </button>
+            <button
+              onClick={handleDownloadPDF}
+              style={{
+                display:'flex', alignItems:'center', gap:6, padding:'7px 14px',
+                borderRadius:10, background:'linear-gradient(135deg,#BC8CFF,#8957e5)',
+                border:'none', color:'white', fontSize:12, fontWeight:600,
+                fontFamily:'inherit', cursor:'pointer',
+                boxShadow:'0 4px 16px rgba(188,140,255,0.35)', transition:'all 0.2s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.transform = 'translateY(-1px)')}
+              onMouseLeave={e => (e.currentTarget.style.transform = 'translateY(0)')}
+            >
+              <Printer size={13} /> Export PDF
             </button>
           </div>
         </div>
