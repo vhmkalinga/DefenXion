@@ -1,23 +1,10 @@
 import { useState, useEffect } from 'react';
 import { User, Mail, Phone, MapPin, Calendar, Shield, Award, Activity, Camera, Upload, X, Loader2, Key, Lock, CheckCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { getMe, updateMe } from '../../services/api';
+import { getMe, updateMe, getMyHistory, getDashboardStats, getDeployedModels } from '../../services/api';
 
 const AVATARS = ['admin','felix','aneka','jack','oliver','leo','salem','milo','cyber','shield','shadow','neon'];
-const ACTIVITY = [
-  { action:'Generated security report', time:'2 hours ago', type:'report' },
-  { action:'Updated firewall rules', time:'5 hours ago', type:'config' },
-  { action:'Blocked DDoS attack', time:'1 day ago', type:'threat' },
-  { action:'Trained AI model v3.2', time:'3 days ago', type:'model' },
-  { action:'Added new team member', time:'1 week ago', type:'user' },
-];
-const ACHIEVE = [
-  { title:'Test Execution', desc:'Passed 1000+ threat scenarios', icon:Shield, color:'#FF4D4D' },
-  { title:'Model Accuracy', desc:'Achieved 95% detection rate', icon:Award, color:'#FFA657' },
-  { title:'Data Processing', desc:'Processed 50,000+ test packets', icon:Activity, color:'#58A6FF' },
-];
 const TYPE_CLR:Record<string,string> = { threat:'#FF4D4D', config:'#FFA657', model:'#58A6FF', report:'#3FB950', user:'#7D8590' };
-const STATS = [{l:'Threats Blocked',v:'2,847',c:'#FF4D4D'},{l:'Reports Generated',v:'142',c:'#3FB950'},{l:'Models Trained',v:'12',c:'#58A6FF'},{l:'Active Days',v:'298',c:'#BC8CFF'}];
 
 export function Profile() {
   const [isEditing, setIsEditing] = useState(false);
@@ -25,8 +12,50 @@ export function Profile() {
   const [showAvatarModal, setShowAvatarModal] = useState(false);
   const [profile, setProfile] = useState<any>({ username:'...', role:'...', full_name:'...', email:'...', phone:'...', location:'...', member_since:'...', two_factor_enabled: false });
   const [form, setForm] = useState({ full_name:'', email:'', phone:'', location:'', avatar:'' });
+  const [recentActivity, setRecentActivity] = useState<any[]>([]);
+  const [dashStats, setDashStats] = useState<any>(null);
+  const [deployedModels, setDeployedModels] = useState<any[]>([]);
 
-  useEffect(() => { getMe().then(d => { setProfile(d); setForm({ full_name:d.full_name||'', email:d.email||'', phone:d.phone||'', location:d.location||'', avatar:d.avatar||'' }); }).catch(console.error); }, []);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => { 
+    Promise.all([
+      getMe().then(d => { 
+        setProfile(d); 
+        setForm({ full_name:d.full_name||'', email:d.email||'', phone:d.phone||'', location:d.location||'', avatar:d.avatar||'' }); 
+      }),
+      getMyHistory(1, 10).then(d => {
+        if (d && d.data) {
+          setRecentActivity(d.data.map((item: any) => {
+            let actionText = "System event recorded";
+            let type = "user";
+            
+            if (item.event_type === "API_PREDICT") {
+              actionText = `Threat check on ${item.source_ip} (${item.prediction})`;
+              type = "threat";
+            } else if (item.event_type === "IDS_RESPONSE") {
+              actionText = `Automated response triggered for ${item.details?.source_ip}`;
+              type = "config";
+            } else if (item.action) {
+              actionText = item.action;
+            } else if (item.message) {
+              actionText = item.message;
+            } else if (item.event_type) {
+              actionText = `Event: ${item.event_type}`;
+            }
+
+            return {
+              action: actionText,
+              time: new Date(item.timestamp).toLocaleString(),
+              type: type
+            };
+          }));
+        }
+      }).catch(console.error),
+      getDashboardStats().then(setDashStats).catch(console.error),
+      getDeployedModels().then(d => { if (d) setDeployedModels(d); }).catch(console.error)
+    ]).finally(() => setIsLoading(false));
+  }, []);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -64,116 +93,204 @@ export function Profile() {
         </div>
       </div>
 
-      <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:20 }}>
-        {/* Left Column */}
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          {/* Profile Card */}
-          <div className="pr" style={{ ...C, padding:'24px 28px', position:'relative', overflow:'hidden' }}>
-            <div style={{ position:'absolute', top:0, left:0, right:0, height:80, background:'linear-gradient(135deg,rgba(31,111,235,0.15),rgba(63,185,80,0.1))', pointerEvents:'none' }}/>
-            <div style={{ display:'flex', alignItems:'flex-start', gap:20, position:'relative', zIndex:1, marginBottom:20 }}>
-              {/* Avatar */}
-              <div style={{ position:'relative', flexShrink:0 }}>
-                <div style={{ width:88, height:88, borderRadius:'50%', border:'3px solid #21262D', overflow:'hidden', background:'#0D1117' }}>
-                  <img src={avatarUrl} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+      {isLoading ? (
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:20 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <div style={{ ...C, padding:'24px 28px', height: 280, display:'flex', flexDirection:'column', gap:20 }}>
+              <div style={{ display:'flex', gap:20 }}>
+                <div style={{ width:88, height:88, borderRadius:'50%', background:'rgba(255,255,255,0.05)' }} />
+                <div style={{ display:'flex', flexDirection:'column', gap:10, justifyContent:'center' }}>
+                  <div style={{ width:160, height:16, background:'rgba(255,255,255,0.05)', borderRadius:4 }} />
+                  <div style={{ width:100, height:12, background:'rgba(255,255,255,0.05)', borderRadius:4 }} />
                 </div>
-                {isEditing && <button onClick={()=>setShowAvatarModal(true)} style={{ position:'absolute', inset:0, borderRadius:'50%', background:'rgba(0,0,0,0.6)', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', opacity:0, transition:'opacity 0.2s' }} onMouseEnter={e=>(e.currentTarget.style.opacity='1')} onMouseLeave={e=>(e.currentTarget.style.opacity='0')}><Camera size={16} color="white"/><span style={{ color:'white', fontSize:9, fontWeight:600, marginTop:2 }}>CHANGE</span></button>}
               </div>
-              <div style={{ flex:1 }}>
-                <div style={{ color:'#E6EDF3', fontSize:18, fontWeight:700 }}>{profile.full_name||profile.username}</div>
-                <div style={{ color:'#7D8590', fontSize:13, textTransform:'capitalize', marginTop:2 }}>{profile.role}</div>
-                <div style={{ marginTop:8 }}><span style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:600, color:'#3FB950', background:'rgba(63,185,80,0.1)', border:'1px solid rgba(63,185,80,0.25)' }}>Active</span></div>
-              </div>
-            </div>
-            {/* Form Fields */}
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-              {[
-                { icon:User, label:'Full Name', key:'full_name', ph:'Enter full name' },
-                { icon:Mail, label:'Email', key:'email', ph:'Enter email', type:'email' },
-                { icon:Phone, label:'Phone', key:'phone', ph:'Enter phone' },
-                { icon:MapPin, label:'Location', key:'location', ph:'Enter location' },
-              ].map(f => (
-                <div key={f.key}>
-                  <div style={L}><f.icon size={12}/> {f.label}</div>
-                  <input type={f.type||'text'} value={(form as any)[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} disabled={!isEditing} placeholder={f.ph} style={{ ...I, opacity:isEditing?1:0.7, cursor:isEditing?'text':'not-allowed' }}/>
-                </div>
-              ))}
-              <div style={{ gridColumn:'1/-1' }}>
-                <div style={L}><Calendar size={12}/> Member Since</div>
-                <input value={profile.member_since} disabled style={{ ...I, opacity:0.5, cursor:'not-allowed' }}/>
-              </div>
-            </div>
-          </div>
-
-          {/* Activity */}
-          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
-            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Recent Activity</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              {ACTIVITY.map((a,i) => (
-                <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 12px', borderRadius:8, background:'rgba(13,17,23,0.4)', border:'1px solid transparent', transition:'border-color 0.15s' }} onMouseEnter={e=>(e.currentTarget.style.borderColor='#21262D')} onMouseLeave={e=>(e.currentTarget.style.borderColor='transparent')}>
-                  <div style={{ width:8, height:8, borderRadius:'50%', marginTop:5, background:TYPE_CLR[a.type]||'#7D8590', boxShadow:`0 0 8px ${TYPE_CLR[a.type]||'#7D8590'}40`, flexShrink:0 }}/>
-                  <div style={{ flex:1 }}><div style={{ color:'#E6EDF3', fontSize:13 }}>{a.action}</div><div style={{ color:'#484F58', fontSize:11, marginTop:2 }}>{a.time}</div></div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column */}
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          {/* Login History */}
-          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
-            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Login History</div>
-            {profile.login_history?.length > 0 ? (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {[...profile.login_history].reverse().map((l:any,i:number) => (
-                  <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:'8px 10px', borderRadius:6, background:'rgba(13,17,23,0.4)' }}>
-                    <div style={{ width:6, height:6, borderRadius:'50%', marginTop:5, background:'#1F6FEB', flexShrink:0 }}/>
-                    <div><div style={{ color:'#E6EDF3', fontFamily:'monospace', fontSize:12 }}>{l.ip}</div><div style={{ color:'#484F58', fontSize:10, marginTop:2 }}>{new Date(l.timestamp).toLocaleString()}</div></div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i}>
+                    <div style={{ width:60, height:10, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:6 }} />
+                    <div style={{ width:'100%', height:34, background:'rgba(255,255,255,0.03)', borderRadius:8 }} />
                   </div>
                 ))}
               </div>
-            ) : <div style={{ color:'#484F58', fontSize:12 }}>No recent logins</div>}
-          </div>
-
-          {/* Achievements */}
-          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
-            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Achievements</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {ACHIEVE.map((a,i) => (
-                <div key={i} style={{ background:'rgba(13,17,23,0.5)', border:'1px solid #21262D', borderRadius:10, padding:'12px 14px', display:'flex', alignItems:'flex-start', gap:10, position:'relative', overflow:'hidden' }}>
-                  <div style={{ position:'absolute', top:-10, right:-10, width:40, height:40, borderRadius:'50%', background:`radial-gradient(circle,${a.color}15,transparent)`, pointerEvents:'none' }}/>
-                  <div style={{ padding:7, borderRadius:8, background:`${a.color}15` }}><a.icon size={16} color={a.color}/></div>
-                  <div><div style={{ color:'#E6EDF3', fontSize:13, fontWeight:500 }}>{a.title}</div><div style={{ color:'#7D8590', fontSize:11, marginTop:2 }}>{a.desc}</div></div>
-                </div>
+            </div>
+            <div style={{ ...C, padding:'20px 24px', height: 340 }}>
+              <div style={{ width:120, height:14, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:16 }} />
+              {Array.from({ length: 5 }).map((_, i) => (
+                 <div key={i} style={{ width:'100%', height:42, background:'rgba(255,255,255,0.03)', borderRadius:8, marginBottom:10 }} />
               ))}
             </div>
           </div>
-
-          {/* Stats */}
-          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
-            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Statistics</div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-              {STATS.map((s,i) => (
-                <div key={i} style={{ background:'rgba(13,17,23,0.5)', borderRadius:10, padding:'12px 14px', border:'1px solid #21262D', position:'relative', overflow:'hidden' }}>
-                  <div style={{ position:'absolute', top:-12, right:-12, width:36, height:36, borderRadius:'50%', background:`radial-gradient(circle,${s.c}18,transparent)`, pointerEvents:'none' }}/>
-                  <div style={{ color:'#7D8590', fontSize:10, marginBottom:4 }}>{s.l}</div>
-                  <div style={{ color:s.c, fontSize:18, fontWeight:700, fontFamily:'monospace' }}>{s.v}</div>
-                </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <div style={{ ...C, padding:'20px 24px', height: 180 }}>
+              <div style={{ width:100, height:14, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:16 }} />
+              <div style={{ width:'100%', height:36, background:'rgba(255,255,255,0.03)', borderRadius:8, marginBottom:8 }} />
+              <div style={{ width:'100%', height:36, background:'rgba(255,255,255,0.03)', borderRadius:8 }} />
+            </div>
+            <div style={{ ...C, padding:'20px 24px', height: 260 }}>
+              <div style={{ width:100, height:14, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:16 }} />
+              {Array.from({ length: 3 }).map((_, i) => (
+                 <div key={i} style={{ width:'100%', height:52, background:'rgba(255,255,255,0.03)', borderRadius:8, marginBottom:8 }} />
               ))}
             </div>
-          </div>
-
-          {/* Project */}
-          <div className="pr" style={{ ...C, padding:'20px 24px' }}>
-            <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Project Details</div>
-            {[{l:'Course',v:'Computer Science',c:'#58A6FF'},{l:'Module',v:'Final Year Project',c:'#E6EDF3'},{l:'Status',v:'Prototype',c:'#3FB950'}].map((p,i)=>(
-              <div key={i} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:i<2?'1px solid #21262D':'none' }}>
-                <span style={{ color:'#7D8590', fontSize:12 }}>{p.l}</span><span style={{ color:p.c, fontSize:12, fontWeight:500 }}>{p.v}</span>
+            <div style={{ ...C, padding:'20px 24px', height: 180 }}>
+              <div style={{ width:100, height:14, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:16 }} />
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} style={{ width:'100%', height:64, background:'rgba(255,255,255,0.03)', borderRadius:8 }} />
+                ))}
               </div>
-            ))}
+            </div>
           </div>
         </div>
-      </div>
+      ) : (
+        <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:20 }}>
+          {/* Left Column */}
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {/* Profile Card */}
+            <div className="pr" style={{ ...C, padding:'24px 28px', position:'relative', overflow:'hidden' }}>
+              <div style={{ position:'absolute', top:0, left:0, right:0, height:80, background:'linear-gradient(135deg,rgba(31,111,235,0.15),rgba(63,185,80,0.1))', pointerEvents:'none' }}/>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:20, position:'relative', zIndex:1, marginBottom:20 }}>
+                {/* Avatar */}
+                <div style={{ position:'relative', flexShrink:0 }}>
+                  <div style={{ width:88, height:88, borderRadius:'50%', border:'3px solid #21262D', overflow:'hidden', background:'#0D1117' }}>
+                    <img src={avatarUrl} alt="avatar" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                  </div>
+                  {isEditing && <button onClick={()=>setShowAvatarModal(true)} style={{ position:'absolute', inset:0, borderRadius:'50%', background:'rgba(0,0,0,0.6)', border:'none', cursor:'pointer', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', opacity:0, transition:'opacity 0.2s' }} onMouseEnter={e=>(e.currentTarget.style.opacity='1')} onMouseLeave={e=>(e.currentTarget.style.opacity='0')}><Camera size={16} color="white"/><span style={{ color:'white', fontSize:9, fontWeight:600, marginTop:2 }}>CHANGE</span></button>}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ color:'#E6EDF3', fontSize:18, fontWeight:700 }}>{profile.full_name||profile.username}</div>
+                  <div style={{ color:'#7D8590', fontSize:13, textTransform:'capitalize', marginTop:2 }}>{profile.role}</div>
+                  <div style={{ marginTop:8 }}><span style={{ padding:'3px 10px', borderRadius:20, fontSize:10, fontWeight:600, color:'#3FB950', background:'rgba(63,185,80,0.1)', border:'1px solid rgba(63,185,80,0.25)' }}>Active</span></div>
+                </div>
+              </div>
+              {/* Form Fields */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+                {[
+                  { icon:User, label:'Full Name', key:'full_name', ph:'Enter full name' },
+                  { icon:Mail, label:'Email', key:'email', ph:'Enter email', type:'email' },
+                  { icon:Phone, label:'Phone', key:'phone', ph:'Enter phone' },
+                  { icon:MapPin, label:'Location', key:'location', ph:'Enter location' },
+                ].map(f => (
+                  <div key={f.key}>
+                    <div style={L}><f.icon size={12}/> {f.label}</div>
+                    <input type={f.type||'text'} value={(form as any)[f.key]} onChange={e=>setForm(p=>({...p,[f.key]:e.target.value}))} disabled={!isEditing} placeholder={f.ph} style={{ ...I, opacity:isEditing?1:0.7, cursor:isEditing?'text':'not-allowed' }}/>
+                  </div>
+                ))}
+                <div style={{ gridColumn:'1/-1' }}>
+                  <div style={L}><Calendar size={12}/> Member Since</div>
+                  <input value={profile.member_since} disabled style={{ ...I, opacity:0.5, cursor:'not-allowed' }}/>
+                </div>
+              </div>
+            </div>
+
+            {/* Activity */}
+            <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+              <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Recent Activity</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {recentActivity.length > 0 ? recentActivity.map((a,i) => (
+                  <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:10, padding:'10px 12px', borderRadius:8, background:'rgba(13,17,23,0.4)', border:'1px solid transparent', transition:'border-color 0.15s' }} onMouseEnter={e=>(e.currentTarget.style.borderColor='#21262D')} onMouseLeave={e=>(e.currentTarget.style.borderColor='transparent')}>
+                    <div style={{ width:8, height:8, borderRadius:'50%', marginTop:5, background:TYPE_CLR[a.type]||'#7D8590', boxShadow:`0 0 8px ${TYPE_CLR[a.type]||'#7D8590'}40`, flexShrink:0 }}/>
+                    <div style={{ flex:1 }}><div style={{ color:'#E6EDF3', fontSize:13 }}>{a.action}</div><div style={{ color:'#484F58', fontSize:11, marginTop:2 }}>{a.time}</div></div>
+                  </div>
+                )) : <div style={{ color:'#484F58', fontSize:12 }}>No recent activity</div>}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Column */}
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            {/* Login History */}
+            <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+              <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Login History</div>
+              {profile.login_history?.length > 0 ? (
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                  {[...profile.login_history].reverse().map((l:any,i:number) => (
+                    <div key={i} style={{ display:'flex', alignItems:'flex-start', gap:8, padding:'8px 10px', borderRadius:6, background:'rgba(13,17,23,0.4)' }}>
+                      <div style={{ width:6, height:6, borderRadius:'50%', marginTop:5, background:'#1F6FEB', flexShrink:0 }}/>
+                      <div><div style={{ color:'#E6EDF3', fontFamily:'monospace', fontSize:12 }}>{l.ip}</div><div style={{ color:'#484F58', fontSize:10, marginTop:2 }}>{new Date(l.timestamp).toLocaleString()}</div></div>
+                    </div>
+                  ))}
+                </div>
+              ) : <div style={{ color:'#484F58', fontSize:12 }}>No recent logins</div>}
+            </div>
+
+            {/* Achievements — computed from real data */}
+            <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+              <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Achievements</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {(() => {
+                  const totalAttacks = dashStats?.total_attacks ?? 0;
+                  const autoResponses = dashStats?.auto_responses ?? 0;
+                  const activeModel = deployedModels.find((m:any) => m.status === 'Active');
+                  const modelAccuracy = activeModel?.accuracy ?? null;
+                  const modelsCount = deployedModels.length;
+
+                  const achievements = [
+                    {
+                      title: 'Threat Hunter',
+                      desc: totalAttacks > 0 ? `${totalAttacks.toLocaleString()} attacks detected` : 'No attacks detected yet',
+                      icon: Shield, color: '#FF4D4D',
+                      unlocked: totalAttacks > 0
+                    },
+                    {
+                      title: 'Model Accuracy',
+                      desc: modelAccuracy !== null ? `Active model at ${modelAccuracy}% accuracy` : 'No model deployed yet',
+                      icon: Award, color: '#FFA657',
+                      unlocked: modelAccuracy !== null
+                    },
+                    {
+                      title: 'AI Trainer',
+                      desc: modelsCount > 0 ? `${modelsCount} model${modelsCount !== 1 ? 's' : ''} trained & deployed` : 'No models trained yet',
+                      icon: Activity, color: '#58A6FF',
+                      unlocked: modelsCount > 0
+                    },
+                    {
+                      title: 'Auto Defense',
+                      desc: autoResponses > 0 ? `${autoResponses.toLocaleString()} automated responses fired` : 'No auto-responses yet',
+                      icon: Key, color: '#3FB950',
+                      unlocked: autoResponses > 0
+                    },
+                  ];
+
+                  return achievements.map((a, i) => (
+                    <div key={i} style={{ background:'rgba(13,17,23,0.5)', border:`1px solid ${a.unlocked ? a.color+'33' : '#21262D'}`, borderRadius:10, padding:'12px 14px', display:'flex', alignItems:'flex-start', gap:10, position:'relative', overflow:'hidden', opacity: a.unlocked ? 1 : 0.45 }}>
+                      <div style={{ position:'absolute', top:-10, right:-10, width:40, height:40, borderRadius:'50%', background:`radial-gradient(circle,${a.color}15,transparent)`, pointerEvents:'none' }}/>
+                      <div style={{ padding:7, borderRadius:8, background:`${a.color}15` }}><a.icon size={16} color={a.unlocked ? a.color : '#7D8590'}/></div>
+                      <div>
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <div style={{ color:'#E6EDF3', fontSize:13, fontWeight:500 }}>{a.title}</div>
+                          {!a.unlocked && <span style={{ fontSize:9, color:'#484F58', fontWeight:600, letterSpacing:'0.05em' }}>LOCKED</span>}
+                        </div>
+                        <div style={{ color: a.unlocked ? '#7D8590' : '#484F58', fontSize:11, marginTop:2 }}>{a.desc}</div>
+                      </div>
+                    </div>
+                  ));
+                })()}
+              </div>
+            </div>
+
+            {/* Stats — real data */}
+            <div className="pr" style={{ ...C, padding:'20px 24px' }}>
+              <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:14 }}>Statistics</div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                {([
+                  { l:'Threats Detected', v: (dashStats?.total_attacks ?? 0).toLocaleString(), c:'#FF4D4D' },
+                  { l:'Auto Responses', v: (dashStats?.auto_responses ?? 0).toLocaleString(), c:'#3FB950' },
+                  { l:'Models Trained', v: deployedModels.length.toLocaleString(), c:'#58A6FF' },
+                  { l:'High Severity', v: (dashStats?.high_severity ?? 0).toLocaleString(), c:'#FFA657' },
+                ] as {l:string,v:string,c:string}[]).map((s,i) => (
+                  <div key={i} style={{ background:'rgba(13,17,23,0.5)', borderRadius:10, padding:'12px 14px', border:'1px solid #21262D', position:'relative', overflow:'hidden' }}>
+                    <div style={{ position:'absolute', top:-12, right:-12, width:36, height:36, borderRadius:'50%', background:`radial-gradient(circle,${s.c}18,transparent)`, pointerEvents:'none' }}/>
+                    <div style={{ color:'#7D8590', fontSize:10, marginBottom:4 }}>{s.l}</div>
+                    <div style={{ color:s.c, fontSize:18, fontWeight:700, fontFamily:'monospace' }}>{s.v}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* Avatar Modal */}
       {showAvatarModal && (
