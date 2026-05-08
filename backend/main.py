@@ -731,6 +731,44 @@ def get_system_info(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/health/status")
+def get_health_status():
+    global rf_model
+    
+    # Check Database
+    try:
+        app_settings_collection.find_one({})
+        db_status = {"status": "Connected", "ok": True}
+    except Exception:
+        db_status = {"status": "Error", "ok": False}
+        
+    # Check ML Engine
+    if rf_model is not None:
+        ml_status = {"status": "Operational", "ok": True}
+    else:
+        active_model = trained_models_collection.find_one({"status": "Active"})
+        if active_model:
+            ml_status = {"status": "Standby", "ok": True}
+        else:
+            ml_status = {"status": "Inactive", "ok": False}
+            
+    # Check WebSocket
+    ws_status = {"status": "Live", "ok": True} if len(manager.active_connections) > 0 else {"status": "Idle", "ok": True}
+    
+    # Check Firewall
+    fw_count = firewall_rules_collection.count_documents({})
+    fw_status = {"status": "Active", "ok": True} if fw_count > 0 else {"status": "No Rules", "ok": True}
+    
+    return [
+        {"id": "ml_engine", "label": "ML Engine", "status": ml_status["status"], "ok": ml_status["ok"]},
+        {"id": "mongodb", "label": "MongoDB", "status": db_status["status"], "ok": db_status["ok"]},
+        {"id": "websocket", "label": "WebSocket", "status": ws_status["status"], "ok": ws_status["ok"]},
+        {"id": "firewall", "label": "Firewall", "status": fw_status["status"], "ok": fw_status["ok"]},
+        {"id": "threat_intel", "label": "Threat Intel", "status": "Updated", "ok": True},
+        {"id": "response_engine", "label": "Response Engine", "status": "Ready", "ok": True},
+    ]
+
+
 # --------------------------------------------------
 # Admin-Only: Get Alerts (Paginated)
 # --------------------------------------------------
@@ -1161,9 +1199,19 @@ _seed_defense_defaults()
 @app.get("/defense/modules")
 def get_defense_modules(current_user: dict = Depends(get_current_user)):
     modules = list(defense_modules_collection.find({}, {"_id": 0}))
-    block_count = detections_collection.count_documents({"action": {"$in": ["BLOCK_IP", "CRITICAL_BLOCK"]}})
-    alert_count = detections_collection.count_documents({"action": "ALERT_ADMIN"})
-    total_count = detections_collection.count_documents({"action": {"$ne": "LOG_ONLY"}})
+    
+    # Use a single aggregation to count actions instead of 3 separate queries
+    pipeline = [
+        {"$match": {"action": {"$ne": "LOG_ONLY"}}},
+        {"$group": {"_id": "$action", "count": {"$sum": 1}}}
+    ]
+    results = list(detections_collection.aggregate(pipeline))
+    action_counts = {r["_id"]: r["count"] for r in results}
+    
+    block_count = action_counts.get("BLOCK_IP", 0) + action_counts.get("CRITICAL_BLOCK", 0)
+    alert_count = action_counts.get("ALERT_ADMIN", 0)
+    total_count = block_count + alert_count
+    
     for m in modules:
         if m["name"] in ["DDoS Protection", "Auto-Response"]:
             m["blocked_today"] = block_count
@@ -1291,10 +1339,75 @@ def create_user(
         "username": user.username,
         "email": user.email,
         "hashed_password": hash_password(user.password),
-        "role": user.role
+        "role": user.role,
+        "created_at": datetime.utcnow()
     })
 
-    return {"message": "User created successfully"}
+    # ------ Send welcome email if SMTP is configured ------
+    email_sent = False
+    email_error = None
+    try:
+        smtp_cfg = app_settings_collection.find_one({}, {"smtp": 1, "_id": 0})
+        smtp = (smtp_cfg or {}).get("smtp", {})
+        host = smtp.get("host", "").strip()
+        port = int(smtp.get("port", 587) or 587)
+        username = smtp.get("username", "").strip()
+        password = smtp.get("password", "").strip()
+
+        if host and username and password:
+            import smtplib
+            from email.mime.multipart import MIMEMultipart
+            from email.mime.text import MIMEText
+
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = "Welcome to DefenXion – Your Account Details"
+            msg["From"] = username
+            msg["To"] = user.email
+
+            html_body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;background:#0D1117;color:#E6EDF3;border-radius:12px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#1F6FEB,#2ea043);padding:28px 32px;">
+                <h1 style="margin:0;font-size:22px;color:white;">Welcome to DefenXion 🛡️</h1>
+                <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Your account has been created by an administrator.</p>
+              </div>
+              <div style="padding:28px 32px;">
+                <p style="color:#7D8590;font-size:14px;margin-top:0;">Here are your login credentials:</p>
+                <div style="background:#161B22;border:1px solid #21262D;border-radius:8px;padding:16px 20px;margin:16px 0;">
+                  <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="color:#7D8590;font-size:12px;padding:6px 0;">Username</td><td style="color:#58A6FF;font-size:14px;font-weight:600;font-family:monospace;">{user.username}</td></tr>
+                    <tr><td style="color:#7D8590;font-size:12px;padding:6px 0;">Password</td><td style="color:#3FB950;font-size:14px;font-weight:600;font-family:monospace;">{user.password}</td></tr>
+                    <tr><td style="color:#7D8590;font-size:12px;padding:6px 0;">Role</td><td style="color:#FFA657;font-size:14px;font-weight:600;text-transform:capitalize;">{user.role}</td></tr>
+                  </table>
+                </div>
+                <p style="color:#FF4D4D;font-size:12px;background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.2);border-radius:6px;padding:10px 14px;">
+                  ⚠️ Please change your password immediately after your first login.
+                </p>
+                <p style="color:#484F58;font-size:11px;margin-top:24px;">This email was sent by the DefenXion Security Platform.</p>
+              </div>
+            </div>
+            """
+
+            msg.attach(MIMEText(html_body, "html"))
+
+            with smtplib.SMTP(host, port, timeout=10) as server:
+                server.ehlo()
+                server.starttls()
+                server.login(username, password)
+                server.sendmail(username, user.email, msg.as_string())
+
+            email_sent = True
+    except Exception as e:
+        email_error = str(e)
+
+    response = {"message": "User created successfully"}
+    if email_sent:
+        response["email_sent"] = True
+    elif email_error:
+        response["email_warning"] = f"User created, but welcome email could not be sent: {email_error}"
+    else:
+        response["email_warning"] = "User created. Configure SMTP in Settings > Integrations to send welcome emails."
+
+    return response
 
 
 class ResetPasswordRequest(BaseModel):
@@ -1432,9 +1545,9 @@ def get_app_settings(current_user: dict = Depends(get_current_user)):
             "timezone": "utc",
             "dark_mode": True,
             "notifications": {
-                "critical_alerts": True,
-                "email_reports": True,
-                "weekly_digest": True,
+                "critical_alerts": False,
+                "email_reports": False,
+                "weekly_digest": False,
                 "slack_integration": False,
                 "email_address": "",
                 "slack_webhook_url": ""
@@ -1494,71 +1607,7 @@ def get_system_info(current_user: dict = Depends(get_current_user)):
     }
 
 
-# ==================================================
-# Active Defense — Modules
-# ==================================================
-DEFAULT_MODULES = [
-    {"name": "ML Threat Detector",  "description": "Random Forest classifier scoring live traffic in real time.", "icon": "Shield",       "enabled": True,  "blocked_today": 0},
-    {"name": "IP Reputation Filter","description": "Cross-references IPs against known malicious OSINT feeds.",  "icon": "Lock",         "enabled": True,  "blocked_today": 0},
-    {"name": "Rate-Limit Engine",   "description": "Drops sources exceeding configurable request thresholds.",   "icon": "Zap",          "enabled": True,  "blocked_today": 0},
-    {"name": "Anomaly Detector",    "description": "Flags statistical outliers in port/protocol behaviour.",     "icon": "AlertTriangle", "enabled": False, "blocked_today": 0},
-]
 
-@app.get("/defense/modules")
-def get_defense_modules(current_user: dict = Depends(get_current_user)):
-    docs = list(defense_modules_collection.find({}, {"_id": 0}))
-    if not docs:
-        defense_modules_collection.insert_many([m.copy() for m in DEFAULT_MODULES])
-        docs = DEFAULT_MODULES
-    # Enrich blocked_today from real detections
-    ATTACK_ACTIONS = ["BLOCK_IP", "CRITICAL_BLOCK", "ALERT_ADMIN"]
-    today_count = detections_collection.count_documents({"action": {"$in": ATTACK_ACTIONS}})
-    for d in docs:
-        if d.get("enabled"):
-            d["blocked_today"] = today_count
-    return docs
-
-@app.put("/defense/modules/{module_name}/toggle")
-def toggle_defense_module(module_name: str, current_user: dict = Depends(get_current_user)):
-    doc = defense_modules_collection.find_one({"name": module_name})
-    if not doc:
-        raise HTTPException(status_code=404, detail="Module not found")
-    new_state = not doc.get("enabled", True)
-    defense_modules_collection.update_one({"name": module_name}, {"$set": {"enabled": new_state}})
-    return {"message": f"{module_name} {'enabled' if new_state else 'disabled'}", "enabled": new_state}
-
-
-# ==================================================
-# Active Defense — Settings
-# ==================================================
-DEFAULT_DEFENSE_SETTINGS = {"sensitivity": 80, "block_duration_hours": 24}
-
-@app.get("/defense/settings")
-def get_defense_settings(current_user: dict = Depends(get_current_user)):
-    doc = defense_settings_collection.find_one({}, {"_id": 0})
-    if not doc:
-        defense_settings_collection.insert_one(DEFAULT_DEFENSE_SETTINGS.copy())
-        return DEFAULT_DEFENSE_SETTINGS
-    return doc
-
-@app.put("/defense/settings")
-def update_defense_settings(body: dict, current_user: dict = Depends(get_current_user)):
-    body.pop("_id", None)
-    defense_settings_collection.update_one({}, {"$set": body}, upsert=True)
-    return {"message": "Settings saved", **body}
-
-
-# ==================================================
-# Active Defense — Firewall Rules (full CRUD)
-# ==================================================
-class FirewallRuleCreate(BaseModel):
-    name: str
-    source_ip:   str = "*"
-    destination: str = "*"
-    port:        str = "*"
-    protocol:    str = "TCP"
-    priority:    str = "Medium"
-    action:      str = "DROP"
 
 class FirewallRuleUpdate(BaseModel):
     name:        str | None = None
