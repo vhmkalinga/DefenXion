@@ -316,6 +316,11 @@ export const getSystemInfo = async () => {
   return response.data;
 };
 
+export const getHealthStatus = async () => {
+  const response = await api.get("/health/status");
+  return response.data;
+};
+
 // ── User Management ──
 export const listUsers = async () => {
   const response = await api.get("/users");
@@ -349,6 +354,10 @@ export const updateMe = async (data: { full_name?: string; email?: string; phone
 };
 
 // ── 2FA ──
+export const getMyHistory = async (page = 1, limit = 20) => {
+  const response = await api.get(`/my-history?page=${page}&limit=${limit}`);
+  return response.data;
+};
 export const login2FA = async (temp_token: string, otp_code: string) => {
   const response = await api.post("/auth/login/2fa", { temp_token, otp_code });
   return response.data;
