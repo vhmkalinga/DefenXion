@@ -41,12 +41,59 @@ export function Settings() {
   const [disablePassword, setDisablePassword] = useState('');
   const [is2FASaving, setIs2FASaving] = useState(false);
 
-  useEffect(() => { getAppSettings().then(d=>{if(d)setSettings(d)}).catch(console.error); getSystemInfo().then(setSystemInfo).catch(console.error); listUsers().then(setTeamUsers).catch(console.error); getMe().then(setProfile).catch(console.error); }, []);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => { 
+    Promise.all([
+      getAppSettings().then(d => { if(d) setSettings(d) }),
+      getSystemInfo().then(setSystemInfo),
+      listUsers().then(setTeamUsers),
+      getMe().then(setProfile)
+    ]).finally(() => setIsLoading(false));
+  }, []);
 
   const updateField = (path: string, value: any) => { setSettings((p: any) => { const k=path.split('.'),u={...p}; let o=u; for(let i=0;i<k.length-1;i++){o[k[i]]={...o[k[i]]};o=o[k[i]]} o[k[k.length-1]]=value; return u; }); setHasChanges(true); };
-  const handleSave = async () => { setIsSaving(true); try{await updateAppSettings(settings);setDark(settings.dark_mode);toast.success('Saved!');setHasChanges(false)}catch{toast.error('Failed')}finally{setIsSaving(false)} };
+  const handleSave = async () => { 
+    if ((settings.notifications?.email_reports || settings.notifications?.critical_alerts) && !settings.notifications?.email_address?.trim()) {
+      toast.error('Please enter an Email Address for notifications');
+      return;
+    }
+    if (settings.notifications?.slack_integration && !settings.notifications?.slack_webhook_url?.trim()) {
+      toast.error('Please enter a Slack Webhook URL');
+      return;
+    }
+    setIsSaving(true); 
+    try {
+      await updateAppSettings(settings);
+      setDark(settings.dark_mode);
+      toast.success('Saved!');
+      setHasChanges(false);
+    } catch {
+      toast.error('Failed to save settings');
+    } finally {
+      setIsSaving(false);
+    }
+  };
   const handleChangePw = async () => { if(!currentPassword){toast.error('Enter current password');return} if(newPassword.length<8){toast.error('Min 8 chars');return} if(newPassword!==confirmPassword){toast.error('Mismatch');return} setIsChangingPassword(true); try{await changePassword(currentPassword,newPassword);toast.success('Changed!');setCurrentPassword('');setNewPassword('');setConfirmPassword('');setShowPasswordForm(false)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')}finally{setIsChangingPassword(false)} };
-  const handleCreateUser = async () => { if(!newUsername.trim()||!newEmail.trim()||!newUserPassword.trim()){toast.error('All fields required');return} if(newUserPassword.length<8){toast.error('Min 8 chars');return} try{await createUser(newUsername,newEmail,newUserPassword,newUserRole);toast.success(`Created "${newUsername}"`);setShowAddUser(false);setNewUsername('');setNewEmail('');setNewUserPassword('');setNewUserRole('user');listUsers().then(setTeamUsers);getSystemInfo().then(setSystemInfo)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')} };
+  const handleCreateUser = async () => { 
+    if(!newUsername.trim()||!newEmail.trim()||!newUserPassword.trim()){toast.error('All fields required');return} 
+    if(newUserPassword.length<8){toast.error('Min 8 chars');return} 
+    try {
+      const res = await createUser(newUsername,newEmail,newUserPassword,newUserRole);
+      if (res?.email_sent) {
+        toast.success(`Account created & welcome email sent to ${newEmail}!`);
+      } else if (res?.email_warning) {
+        toast.success(`User "${newUsername}" created!`);
+        toast.warning(res.email_warning, { duration: 6000 });
+      } else {
+        toast.success(`Created "${newUsername}"`);
+      }
+      setShowAddUser(false);setNewUsername('');setNewEmail('');setNewUserPassword('');setNewUserRole('user');
+      listUsers().then(setTeamUsers);getSystemInfo().then(setSystemInfo);
+    } catch(e:any) {
+      toast.error(e?.response?.data?.detail||'Failed');
+    }
+  };
   const handleDeleteUser = async (u:string) => { if(!confirm(`Delete "${u}"?`))return; try{await deleteUser(u);toast.success(`Deleted`);listUsers().then(setTeamUsers);getSystemInfo().then(setSystemInfo)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')} };
   const handleResetPw = async () => { if(!resetUser)return; if(adminResetPw.length<8){toast.error('Min 8 chars');return} setIsResetting(true); try{await adminResetPassword(resetUser,adminResetPw);toast.success(`Reset for ${resetUser}`);setResetUser(null);setAdminResetPw('')}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')}finally{setIsResetting(false)} };
 
@@ -125,29 +172,42 @@ export function Settings() {
       ))}
     </div>
 
-    {/* General */}
-    {activeTab==='general'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:16}}>
-      <div style={S}><div style={L}>Organization Name</div><input value={settings.organization_name} onChange={e=>updateField('organization_name',e.target.value)} style={I}/></div>
-      <div style={S}><div style={L}>Time Zone</div><div style={{display:'flex',alignItems:'center',gap:8}}><Globe size={14} color="#7D8590"/><select value={settings.timezone} onChange={e=>updateField('timezone',e.target.value)} style={{...I,cursor:'pointer',width:260}}>{[['utc','UTC'],['est','Eastern'],['cst','Central'],['mst','Mountain'],['pst','Pacific'],['gmt','GMT'],['cet','CET'],['ist','IST'],['jst','JST'],['aest','AEST']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>
-      <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Dark Mode</div><div style={{color:'#7D8590',fontSize:12,marginTop:2}}>Use dark theme</div></div><Switch checked={settings.dark_mode} onCheckedChange={v=>{updateField('dark_mode',v);setDark(v)}}/></div>
-      <div style={S}>
-        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Auto-Generate Reports</div><div style={{color:'#7D8590',fontSize:12,marginTop:1}}>Automatically generate and save security reports</div></div>
-          <Switch checked={settings.reports?.auto_generate !== false} onCheckedChange={v=>updateField('reports.auto_generate',v)}/>
+    {isLoading ? (
+      <div className="sr" style={{...C, padding:'24px 28px', height: 400}}>
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} style={{ background:'rgba(13,17,23,0.5)', borderRadius:12, padding:'20px', border:'1px solid #21262D' }}>
+              <div style={{ width:140, height:14, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:16 }} />
+              <div style={{ width:'100%', height:38, background:'rgba(255,255,255,0.03)', borderRadius:8 }} />
+            </div>
+          ))}
         </div>
-        {settings.reports?.auto_generate !== false && (
-          <div style={{marginTop:12,paddingLeft:2}}>
-            <div style={L}>Generation Frequency</div>
-            <select value={settings.reports?.frequency || 'weekly'} onChange={e=>updateField('reports.frequency',e.target.value)} style={{...I, cursor:'pointer', width: 200}}>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-              <option value="all">All</option>
-            </select>
-          </div>
-        )}
       </div>
-    </div></div>}
+    ) : (
+      <>
+        {/* General */}
+        {activeTab==='general'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:16}}>
+          <div style={S}><div style={L}>Organization Name</div><input value={settings.organization_name} onChange={e=>updateField('organization_name',e.target.value)} style={I}/></div>
+          <div style={S}><div style={L}>Time Zone</div><div style={{display:'flex',alignItems:'center',gap:8}}><Globe size={14} color="#7D8590"/><select value={settings.timezone} onChange={e=>updateField('timezone',e.target.value)} style={{...I,cursor:'pointer',width:260}}>{[['utc','UTC'],['est','Eastern'],['cst','Central'],['mst','Mountain'],['pst','Pacific'],['gmt','GMT'],['cet','CET'],['ist','IST'],['jst','JST'],['aest','AEST']].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div></div>
+          <div style={{...S,display:'flex',alignItems:'center',justifyContent:'space-between'}}><div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Dark Mode</div><div style={{color:'#7D8590',fontSize:12,marginTop:2}}>Use dark theme</div></div><Switch checked={settings.dark_mode} onCheckedChange={v=>{updateField('dark_mode',v);setDark(v)}}/></div>
+          <div style={S}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Auto-Generate Reports</div><div style={{color:'#7D8590',fontSize:12,marginTop:1}}>Automatically generate and save security reports</div></div>
+              <Switch checked={settings.reports?.auto_generate !== false} onCheckedChange={v=>updateField('reports.auto_generate',v)}/>
+            </div>
+            {settings.reports?.auto_generate !== false && (
+              <div style={{marginTop:12,paddingLeft:2}}>
+                <div style={L}>Generation Frequency</div>
+                <select value={settings.reports?.frequency || 'weekly'} onChange={e=>updateField('reports.frequency',e.target.value)} style={{...I, cursor:'pointer', width: 200}}>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="all">All</option>
+                </select>
+              </div>
+            )}
+          </div>
+        </div></div>}
 
     {/* Notifications */}
     {activeTab==='notifications'&&<div className="sr" style={{...C,padding:'20px 24px'}}><div style={{display:'flex',flexDirection:'column',gap:14}}>
@@ -267,6 +327,8 @@ export function Settings() {
           </div>);})}</div>
       </div>
     </div></div>}
+      </>
+    )}
 
     {/* Reset Modal */}
     {resetUser&&<div style={{position:'fixed',inset:0,zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,0.6)',backdropFilter:'blur(4px)'}} onClick={()=>{setResetUser(null);setAdminResetPw('')}}>
