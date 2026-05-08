@@ -8,7 +8,7 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar,
 } from 'recharts';
-import { getDashboardStats, getRecentAlerts } from '../../services/api';
+import { getDashboardStats, getRecentAlerts, getHealthStatus } from '../../services/api';
 import { ThreatAnalysisModal } from '../ThreatAnalysisModal';
 import { AnimatePresence } from 'motion/react';
 import AttackSourceMap from '../AttackSourceMap';
@@ -161,16 +161,16 @@ function HeroStatCard({ title, rawValue, change, icon, accent, accentBg, isText 
 /* ─────────────────────────────────────────────────────────
    System Health Bar
 ───────────────────────────────────────────────────────── */
-const HEALTH_ITEMS = [
-  { label: 'ML Engine', icon: <Cpu size={13} />, status: 'Operational', ok: true },
-  { label: 'MongoDB', icon: <Database size={13} />, status: 'Connected', ok: true },
-  { label: 'WebSocket', icon: <Wifi size={13} />, status: 'Live', ok: true },
-  { label: 'Firewall', icon: <Lock size={13} />, status: 'Active', ok: true },
-  { label: 'Threat Intel', icon: <Globe size={13} />, status: 'Updated', ok: true },
-  { label: 'Response Engine', icon: <Terminal size={13} />, status: 'Ready', ok: true },
-];
+function SystemHealthBar({ items }: { items: { id: string; label: string; status: string; ok: boolean }[] }) {
+  const iconMap: Record<string, React.ReactNode> = {
+    ml_engine: <Cpu size={13} />,
+    mongodb: <Database size={13} />,
+    websocket: <Wifi size={13} />,
+    firewall: <Lock size={13} />,
+    threat_intel: <Globe size={13} />,
+    response_engine: <Terminal size={13} />,
+  };
 
-function SystemHealthBar() {
   return (
     <div style={{
       background: 'linear-gradient(135deg, #161B22, #1a1f28)',
@@ -185,14 +185,14 @@ function SystemHealthBar() {
       <span style={{ color: '#7D8590', fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', marginRight: 8 }}>
         SYSTEM STATUS
       </span>
-      {HEALTH_ITEMS.map((item) => (
-        <div key={item.label} style={{
+      {items.map((item) => (
+        <div key={item.id} style={{
           display: 'flex', alignItems: 'center', gap: 5,
           padding: '4px 10px', borderRadius: 20,
           background: item.ok ? 'rgba(63,185,80,0.07)' : 'rgba(255,77,77,0.07)',
           border: `1px solid ${item.ok ? 'rgba(63,185,80,0.18)' : 'rgba(255,77,77,0.18)'}`,
         }}>
-          <span style={{ color: item.ok ? '#3FB950' : '#FF4D4D' }}>{item.icon}</span>
+          <span style={{ color: item.ok ? '#3FB950' : '#FF4D4D' }}>{iconMap[item.id] || <Activity size={13} />}</span>
           <span style={{ color: '#C9D1D9', fontSize: 11 }}>{item.label}</span>
           <span style={{
             width: 5, height: 5, borderRadius: '50%',
@@ -255,6 +255,13 @@ export function DashboardOverview({ onNavigate }: { onNavigate?: (page: string) 
     changes: { total_attacks: '+12.5%', high_severity: '+8.3%', avg_detection_time: '-8.2%', auto_responses: '+15.7%' },
   });
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [healthItems, setHealthItems] = useState<any[]>([
+    { id: 'ml_engine', label: 'ML Engine', status: 'online', ok: true },
+    { id: 'mongodb', label: 'MongoDB', status: 'online', ok: true },
+    { id: 'websocket', label: 'WebSocket Stream', status: 'online', ok: true },
+    { id: 'firewall', label: 'Active Firewall', status: 'online', ok: true }
+  ]);
+  const [backendLive, setBackendLive] = useState(false);
   const [selectedThreat, setSelectedThreat] = useState<any>(null);
   const { trafficHistory, topSources, isLoaded } = useAnalytics();
 
@@ -262,6 +269,14 @@ export function DashboardOverview({ onNavigate }: { onNavigate?: (page: string) 
     const fetchAll = () => {
       getDashboardStats().then(d => { if (d) setStats(d); }).catch(() => {});
       getRecentAlerts().then(d => { if (d?.length) setAlerts(d); }).catch(() => {});
+      getHealthStatus().then(d => {
+        if (d) {
+          setHealthItems(d);
+          setBackendLive(true);
+        }
+      }).catch(() => {
+        setBackendLive(false);
+      });
     };
     fetchAll();
     const t = setInterval(fetchAll, 6000);
@@ -340,12 +355,17 @@ export function DashboardOverview({ onNavigate }: { onNavigate?: (page: string) 
             <span style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '6px 14px', borderRadius: 20,
-              background: 'rgba(63,185,80,0.08)',
-              border: '1px solid rgba(63,185,80,0.2)',
-              color: '#3FB950', fontSize: 12, fontWeight: 600,
+              background: backendLive ? 'rgba(63,185,80,0.08)' : 'rgba(255,77,77,0.08)',
+              border: backendLive ? '1px solid rgba(63,185,80,0.2)' : '1px solid rgba(255,77,77,0.2)',
+              color: backendLive ? '#3FB950' : '#FF4D4D', fontSize: 12, fontWeight: 600,
             }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#3FB950', boxShadow: '0 0 8px rgba(63,185,80,0.6)', animation: 'dx-blink 2s ease-in-out infinite' }} />
-              Live Monitoring
+              <span style={{ 
+                width: 7, height: 7, borderRadius: '50%', 
+                background: backendLive ? '#3FB950' : '#FF4D4D', 
+                boxShadow: backendLive ? '0 0 8px rgba(63,185,80,0.6)' : '0 0 8px rgba(255,77,77,0.6)', 
+                animation: backendLive ? 'dx-blink 2s ease-in-out infinite' : 'none' 
+              }} />
+              {backendLive ? 'Live Monitoring' : 'Offline'}
             </span>
             <Activity size={16} color="#7D8590" />
           </div>
@@ -353,7 +373,7 @@ export function DashboardOverview({ onNavigate }: { onNavigate?: (page: string) 
 
         {/* ── System health ── */}
         <div className="dx-overview-row" style={{ marginBottom: 24 }}>
-          <SystemHealthBar />
+          {healthItems.length > 0 && <SystemHealthBar items={healthItems} />}
         </div>
 
         {/* ── Stat cards ── */}

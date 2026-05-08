@@ -122,30 +122,41 @@ export function ActiveDefense() {
 
       {/* ── Defense Modules ── */}
       <div className="ad-row" style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:16, marginBottom:24 }}>
-        {modules.map((mod: any, i: number) => {
-          const Icon = ICON_MAP[mod.icon] || Shield;
-          const accent = mod.enabled ? '#58A6FF' : '#FF4D4D';
-          return (
-            <div key={i} style={{ ...CARD, padding:'20px 22px', border:`1px solid ${mod.enabled ? '#21262D' : 'rgba(255,77,77,0.25)'}`, position:'relative', overflow:'hidden', transition:'border-color 0.2s' }}>
-              <div style={{ position:'absolute', top:-20, right:-20, width:60, height:60, borderRadius:'50%', background:`radial-gradient(circle,${accent}20 0%,transparent 70%)`, pointerEvents:'none' }} />
-              <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:12 }}>
-                <div style={{ width:38, height:38, borderRadius:10, background:`${accent}18`, border:`1px solid ${accent}33`, display:'flex', alignItems:'center', justifyContent:'center', color:accent }}>
-                  <Icon size={17} />
-                </div>
-                <Switch checked={mod.enabled} onCheckedChange={() => handleToggleModule(mod.name)} />
-              </div>
-              <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:4 }}>{mod.name}</div>
-              <div style={{ color:'#7D8590', fontSize:12, lineHeight:1.5, marginBottom:14 }}>{mod.description}</div>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', paddingTop:12, borderTop:'1px solid #21262D' }}>
-                <span style={{ color:'#7D8590', fontSize:11 }}>Threats Blocked</span>
-                <span style={{ fontFamily:'monospace', fontSize:14, fontWeight:700, color: mod.enabled ? '#3FB950' : '#484F58' }}>
-                  {mod.enabled ? (mod.blocked_today || 0).toLocaleString() : '—'}
-                </span>
-              </div>
-              <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${accent}55,transparent)` }} />
+        {modules.length === 0 ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} style={{ ...CARD, height: 160, padding:'20px 22px', border:'1px solid #21262D' }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:'rgba(255,255,255,0.05)', marginBottom:12 }} />
+              <div style={{ width:120, height:14, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:8 }} />
+              <div style={{ width:'100%', height:10, background:'rgba(255,255,255,0.05)', borderRadius:4, marginBottom:4 }} />
+              <div style={{ width:'80%', height:10, background:'rgba(255,255,255,0.05)', borderRadius:4 }} />
             </div>
-          );
-        })}
+          ))
+        ) : (
+          modules.map((mod: any, i: number) => {
+            const Icon = ICON_MAP[mod.icon] || Shield;
+            const accent = mod.enabled ? '#58A6FF' : '#FF4D4D';
+            return (
+              <div key={i} style={{ ...CARD, padding:'20px 22px', border:`1px solid ${mod.enabled ? '#21262D' : 'rgba(255,77,77,0.25)'}`, position:'relative', overflow:'hidden', transition:'border-color 0.2s' }}>
+                <div style={{ position:'absolute', top:-20, right:-20, width:60, height:60, borderRadius:'50%', background:`radial-gradient(circle,${accent}20 0%,transparent 70%)`, pointerEvents:'none' }} />
+                <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:12 }}>
+                  <div style={{ width:38, height:38, borderRadius:10, background:`${accent}18`, border:`1px solid ${accent}33`, display:'flex', alignItems:'center', justifyContent:'center', color:accent }}>
+                    <Icon size={17} />
+                  </div>
+                  <Switch checked={mod.enabled} onCheckedChange={() => handleToggleModule(mod.name)} />
+                </div>
+                <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:600, marginBottom:4 }}>{mod.name}</div>
+                <div style={{ color:'#7D8590', fontSize:12, lineHeight:1.5, marginBottom:14 }}>{mod.description}</div>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', paddingTop:12, borderTop:'1px solid #21262D' }}>
+                  <span style={{ color:'#7D8590', fontSize:11 }}>Threats Blocked</span>
+                  <span style={{ fontFamily:'monospace', fontSize:14, fontWeight:700, color: mod.enabled ? '#3FB950' : '#484F58' }}>
+                    {mod.enabled ? (mod.blocked_today || 0).toLocaleString() : '—'}
+                  </span>
+                </div>
+                <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:`linear-gradient(90deg,transparent,${accent}55,transparent)` }} />
+              </div>
+            );
+          })
+        )}
       </div>
 
       {/* ── Defense Settings ── */}
