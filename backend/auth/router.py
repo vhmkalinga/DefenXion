@@ -163,7 +163,8 @@ def login_user(
     access_token = create_access_token({
         "sub": user["username"],
         "role": user["role"],
-        "type": "access"
+        "type": "access",
+        "must_change_password": user.get("must_change_password", False)
     }, expires_delta=timedelta(minutes=timeout))
 
     refresh_token = create_refresh_token(user["username"])
@@ -177,7 +178,8 @@ def login_user(
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "must_change_password": user.get("must_change_password", False)
     }
 
 
@@ -213,7 +215,8 @@ def login_2fa(data: Login2FARequest):
     access_token = create_access_token({
         "sub": user["username"],
         "role": user["role"],
-        "type": "access"
+        "type": "access",
+        "must_change_password": user.get("must_change_password", False)
     }, expires_delta=timedelta(minutes=timeout))
 
     refresh_token = create_refresh_token(user["username"])
@@ -227,7 +230,8 @@ def login_2fa(data: Login2FARequest):
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "must_change_password": user.get("must_change_password", False)
     }
 
 
@@ -428,3 +432,32 @@ def update_me(data: UpdateProfileRequest, current_user: dict = Depends(get_curre
     )
     
     return {"message": "Profile updated successfully"}
+
+
+# ==================================================
+# FORCED PASSWORD CHANGE (after temp-password login)
+# ==================================================
+class ForcedChangePasswordRequest(BaseModel):
+    new_password: str
+
+@router.post("/change-password-forced")
+def forced_change_password(
+    data: ForcedChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Used when the user logs in with a temporary password (must_change_password=True).
+    Clears the must_change_password flag after saving the new password.
+    """
+    from backend.auth.security import hash_password
+    if len(data.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+
+    users_collection.update_one(
+        {"username": current_user["username"]},
+        {"$set": {
+            "hashed_password": hash_password(data.new_password),
+            "must_change_password": False,
+        }}
+    )
+    return {"message": "Password changed successfully. must_change_password cleared."}

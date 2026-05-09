@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from backend.auth.dependencies import get_current_user
 from backend.database import (
     detections_collection, users_collection,
@@ -15,6 +15,7 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     action_url: str | None = None
+    secondary_action_url: str | None = None   # Second CTA button (e.g. CSV alongside PDF)
     data_table: list | None = None   # For structured card data sent to the UI
 
 # ─────────────────────────────────────────────────────────
@@ -76,6 +77,11 @@ def handle_chat_message(
         "system", "report", "summary", "traffic", "analytic", "model", "rule",
         "defense", "detect", "incident", "security", "man in the middle", "mitm",
         "log", "audit", "vulnerability", "exploit", "scan", "intrusion",
+        # New intent keywords
+        "pdf", "trend", "over time", "24 hour", "this week", "7 day", "last hour",
+        "blocked", "ban list", "banned", "cve", "zero-day", "zero day", "zeroday",
+        "patch", "unpatched", "compliance", "pci", "gdpr", "hipaa", "iso 27001",
+        "sox", "nist", "regulation", "download",
     ]
     is_security_topic = any(k in msg for k in SECURITY_KEYWORDS)
 
@@ -109,36 +115,135 @@ def handle_chat_message(
 
     # ── REPORT / SUMMARY ──────────────────────────────────
     if any(k in msg for k in ["report", "summary", "weekly", "daily", "monthly", "generate", "overview"]):
-        s = get_system_snapshot()
 
-        # Top attack types from detections
-        pipeline = [{"$group": {"_id": "$type", "count": {"$sum": 1}}},
-                    {"$sort": {"count": -1}}, {"$limit": 5}]
-        top_types = list(detections_collection.aggregate(pipeline))
+        # ── Detect timeframe from natural language ──────────
+        time_filter: dict = {}
+        period_label = "All Time"
 
-        # Top attacker IPs
-        ip_pipeline = [{"$group": {"_id": "$source_ip", "count": {"$sum": 1}}},
+        if any(k in msg for k in ["last hour", "past hour", "1 hour"]):
+            window_start = now - timedelta(hours=1)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = "Last Hour"
+
+        elif any(k in msg for k in ["today", "this day"]):
+            window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = f"Today ({now.strftime('%d %b %Y')})"
+
+        elif "yesterday" in msg:
+            yesterday = now - timedelta(days=1)
+            window_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+            window_end   = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
+            time_filter = {"timestamp": {"$gte": window_start, "$lte": window_end}}
+            period_label = f"Yesterday ({yesterday.strftime('%d %b %Y')})"
+
+        elif any(k in msg for k in ["last 24", "24 hour", "past 24"]):
+            window_start = now - timedelta(hours=24)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = "Last 24 Hours"
+
+        elif any(k in msg for k in ["last 7", "7 day", "past 7"]):
+            window_start = now - timedelta(days=7)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = "Last 7 Days"
+
+        elif any(k in msg for k in ["last 30", "30 day", "past 30"]):
+            window_start = now - timedelta(days=30)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = "Last 30 Days"
+
+        elif any(k in msg for k in ["last 90", "90 day", "past 90", "last quarter", "quarter"]):
+            window_start = now - timedelta(days=90)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = "Last 90 Days (Quarter)"
+
+        elif any(k in msg for k in ["this week", "current week"]):
+            days_since_monday = now.weekday()
+            window_start = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+            time_filter = {"timestamp": {"$gte": window_start}}
+            period_label = f"This Week (since {window_start.strftime('%d %b')})"
+
+        elif any(k in msg for k in ["last week", "previous week", "weekly"]):
+            days_since_monday = now.weekday()
+            this_monday  = (now - timedelta(days=days_since_monday)).replace(hour=0, minute=0, second=0, microsecond=0)
+            last_monday  = this_monday - timedelta(days=7)
+            last_sunday  = this_monday - timedelta(seconds=1)
+            time_filter  = {"timestamp": {"$gte": last_monday, "$lte": last_sunday}}
+            period_label = f"Last Week ({last_monday.strftime('%d %b')} – {last_sunday.strftime('%d %b %Y')})"
+
+        elif any(k in msg for k in ["this month", "current month", "monthly"]):
+            window_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            time_filter  = {"timestamp": {"$gte": window_start}}
+            period_label = f"This Month ({now.strftime('%B %Y')})"
+
+        elif any(k in msg for k in ["last month", "previous month"]):
+            first_of_this   = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            last_month_end  = first_of_this - timedelta(seconds=1)
+            last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            time_filter  = {"timestamp": {"$gte": last_month_start, "$lte": last_month_end}}
+            period_label = f"Last Month ({last_month_start.strftime('%B %Y')})"
+
+        elif any(k in msg for k in ["this year", "current year"]):
+            window_start = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            time_filter  = {"timestamp": {"$gte": window_start}}
+            period_label = f"This Year ({now.year})"
+
+        elif any(k in msg for k in ["last year", "previous year"]):
+            window_start = now.replace(year=now.year - 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+            window_end   = now.replace(year=now.year - 1, month=12, day=31, hour=23, minute=59, second=59, microsecond=999999)
+            time_filter  = {"timestamp": {"$gte": window_start, "$lte": window_end}}
+            period_label = f"Last Year ({now.year - 1})"
+
+        elif "daily" in msg or any(k in msg for k in ["today's", "todays"]):
+            window_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            time_filter  = {"timestamp": {"$gte": window_start}}
+            period_label = f"Today ({now.strftime('%d %b %Y')})"
+
+        # ── Build time-filtered queries ──────────────────────
+        attack_filter = {**time_filter, "action": {"$in": ATTACK_ACTIONS}}
+        high_filter   = {**time_filter, "action": {"$in": HIGH_SEVERITY_ACTIONS}}
+        medium_filter = {**time_filter, "action": "ALERT_ADMIN"}
+
+        total_period  = detections_collection.count_documents(attack_filter)
+        high_period   = detections_collection.count_documents(high_filter)
+        medium_period = detections_collection.count_documents(medium_filter)
+        low_period    = max(0, total_period - high_period - medium_period)
+
+        # Top attack types in the period
+        type_match   = {"$match": attack_filter}
+        type_pipeline = [type_match, {"$group": {"_id": "$type", "count": {"$sum": 1}}},
+                         {"$sort": {"count": -1}}, {"$limit": 5}]
+        top_types = list(detections_collection.aggregate(type_pipeline))
+
+        # Top attacker IPs in the period
+        ip_match    = {"$match": attack_filter}
+        ip_pipeline = [ip_match, {"$group": {"_id": "$source_ip", "count": {"$sum": 1}}},
                        {"$sort": {"count": -1}}, {"$limit": 3}]
         top_ips = list(detections_collection.aggregate(ip_pipeline))
 
+        # ── Build reply ──────────────────────────────────────
+        period_emoji = "📅" if time_filter else "📊"
         reply = (
-            f"📊 **Security Report — {now.strftime('%d %b %Y')}**\n\n"
+            f"{period_emoji} **Security Report — {period_label}**\n\n"
             f"**Threat Summary**\n"
-            f"• Total incidents: {s['total']}\n"
-            f"• High: {s['high']}  |  Medium: {s['medium']}  |  Low: {s['low']}\n\n"
+            f"• Total incidents: **{total_period}**\n"
+            f"• High: **{high_period}**  |  Medium: **{medium_period}**  |  Low: **{low_period}**\n\n"
         )
-        if top_types:
-            reply += "**Top Attack Types**\n"
-            for t in top_types:
-                reply += f"• {t['_id'] or 'Unknown'} — {t['count']} incidents\n"
-            reply += "\n"
-        if top_ips:
-            reply += "**Top Source IPs**\n"
-            for ip in top_ips:
-                reply += f"• `{ip['_id'] or 'N/A'}` — {ip['count']} hits\n"
+        if not total_period and time_filter:
+            reply += f"✅ No attacks detected during **{period_label}**. System was clean in this window.\n"
+        else:
+            if top_types:
+                reply += "**Top Attack Types**\n"
+                for t in top_types:
+                    reply += f"• {t['_id'] or 'Unknown'} — {t['count']} incidents\n"
+                reply += "\n"
+            if top_ips:
+                reply += "**Top Source IPs**\n"
+                for ip in top_ips:
+                    reply += f"• `{ip['_id'] or 'N/A'}` — {ip['count']} hits\n"
 
-        reply += "\nClick **'Download CSV'** below to save this report."
-        return ChatResponse(reply=reply, action_url="export-csv")
+        reply += "\nDownload your report below — PDF for a branded document, CSV for raw data."
+        return ChatResponse(reply=reply, action_url="export-pdf", secondary_action_url="export-csv")
 
     # ── TOP ATTACKING IPs ──────────────────────────────────
     if any(k in msg for k in ["top ip", "attacking ip", "source ip", "who is attacking", "attacker"]):
@@ -201,6 +306,147 @@ def handle_chat_message(
                 reply += f"• {r.get('action','UNKNOWN')} → `{r.get('source_ip') or r.get('destination_ip','?')}`\n"
         reply += "\nGo to Active Defense to manage rules."
         return ChatResponse(reply=reply, action_url="defense")
+
+    # ── THREAT TRENDS (time-bucketed) ────────────────────
+    if any(k in msg for k in ["trend", "over time", "last 24", "24 hour", "this week", "7 day", "last hour", "hourly", "daily trend", "weekly trend"]):
+        now = datetime.now(timezone.utc)
+        # Determine window: 'hour' → last hour in 5-min buckets; else last 7 days in daily buckets
+        is_hourly = any(k in msg for k in ["last hour", "hourly", "1 hour"])
+        if is_hourly:
+            window_start = now - timedelta(hours=1)
+            fmt = "%H:%M"
+            bucket_fmt = "%Y-%m-%dT%H:%M"
+            bucket_size_ms = 5 * 60 * 1000  # 5-minute buckets
+        else:
+            window_start = now - timedelta(days=7)
+            fmt = "%d %b"
+            bucket_fmt = "%Y-%m-%d"
+            bucket_size_ms = 24 * 60 * 60 * 1000  # daily buckets
+
+        pipeline = [
+            {"$match": {"timestamp": {"$gte": window_start}, "action": {"$in": ATTACK_ACTIONS}}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": bucket_fmt, "date": "$timestamp"}},
+                "count": {"$sum": 1}
+            }},
+            {"$sort": {"_id": 1}},
+            {"$limit": 14}
+        ]
+        buckets = list(detections_collection.aggregate(pipeline))
+
+        label = "Last Hour (5-min buckets)" if is_hourly else "Last 7 Days (daily)"
+        if not buckets:
+            return ChatResponse(
+                reply=f"📈 **Threat Trends — {label}**\n\nNo attack events detected in this window. ✅ System looks clean!",
+                action_url="threats"
+            )
+
+        total_in_window = sum(b["count"] for b in buckets)
+        peak = max(buckets, key=lambda b: b["count"])
+        reply = f"📈 **Threat Trends — {label}**\n\n"
+        reply += f"• Total incidents in window: **{total_in_window}**\n"
+        reply += f"• Peak period: **{peak['_id']}** ({peak['count']} events)\n\n"
+        reply += "| Period | Events |\n|---|---:|\n"
+        for b in buckets:
+            bar = "█" * min(b["count"], 10) + ("…" if b["count"] > 10 else "")
+            reply += f"| {b['_id']} | {b['count']} {bar} |\n"
+        return ChatResponse(reply=reply, action_url="threats")
+
+    # ── BLOCKED IPs ────────────────────────────────────────
+    if any(k in msg for k in ["blocked ip", "block list", "ban list", "banned ip", "ip ban", "blocked addresses"]):
+        pipeline = [
+            {"$match": {"action": {"$in": ["BLOCK_IP", "CRITICAL_BLOCK"]}}},
+            {"$group": {"_id": "$source_ip", "count": {"$sum": 1}, "last_seen": {"$max": "$timestamp"}}},
+            {"$sort": {"count": -1}},
+            {"$limit": 8}
+        ]
+        blocked = list(detections_collection.aggregate(pipeline))
+        fw_total = firewall_rules_collection.count_documents({"action": {"$in": ["DROP", "BLOCK"]}})
+
+        if not blocked:
+            return ChatResponse(
+                reply="🔒 **Blocked IPs**\n\nNo IPs have been automatically blocked yet. The system will block IPs when it detects CRITICAL or HIGH severity attacks.",
+                action_url="defense"
+            )
+        reply = f"🔒 **Blocked IPs — Top Offenders**\n\n"
+        reply += f"• Manual firewall DROP rules: **{fw_total}**\n"
+        reply += f"• Auto-blocked by IDS: **{len(blocked)} unique IPs**\n\n"
+        reply += "| # | IP Address | Block Count |\n|---|---|---:|\n"
+        for i, b in enumerate(blocked, 1):
+            ts = b["last_seen"]
+            ts_str = ts.strftime("%d/%m %H:%M") if hasattr(ts, "strftime") else str(ts)
+            reply += f"| {i} | `{b['_id'] or 'N/A'}` | {b['count']} (last: {ts_str}) |\n"
+        reply += "\nGo to Active Defense to manage or unblock IPs."
+        return ChatResponse(reply=reply, action_url="defense")
+
+    # ── GENERATE / DOWNLOAD PDF REPORT ────────────────────
+    if any(k in msg for k in ["pdf", "download pdf", "export pdf", "generate pdf", "pdf report", "download report"]):
+        s = get_system_snapshot()
+        ip_pipeline = [{"$group": {"_id": "$source_ip", "count": {"$sum": 1}}},
+                       {"$sort": {"count": -1}}, {"$limit": 3}]
+        top_ips = list(detections_collection.aggregate(ip_pipeline))
+        type_pipeline = [{"$group": {"_id": "$type", "count": {"$sum": 1}}},
+                         {"$sort": {"count": -1}}, {"$limit": 5}]
+        top_types = list(detections_collection.aggregate(type_pipeline))
+
+        reply = (
+            f"📄 **PDF Security Report Ready — {datetime.now(timezone.utc).strftime('%d %b %Y')}**\n\n"
+            f"**Summary**\n"
+            f"• Total incidents: {s['total']}\n"
+            f"• High: {s['high']}  |  Medium: {s['medium']}  |  Low: {s['low']}\n"
+            f"• Locked accounts: {s['locked']}  |  Firewall rules: {s['rules']}\n\n"
+        )
+        if top_types:
+            reply += "**Top Attack Types**\n"
+            for t in top_types:
+                reply += f"• {t['_id'] or 'Unknown'} — {t['count']} incidents\n"
+            reply += "\n"
+        if top_ips:
+            reply += "**Top Source IPs**\n"
+            for ip in top_ips:
+                reply += f"• `{ip['_id'] or 'N/A'}` — {ip['count']} hits\n"
+        reply += "\nClick **'Download PDF'** below to save a professionally formatted report."
+        return ChatResponse(reply=reply, action_url="export-pdf")
+
+    # ── CVE / ZERO-DAY / VULNERABILITY ───────────────────
+    if any(k in msg for k in ["cve", "zero-day", "zero day", "zeroday", "unpatched", "patch", "vulnerability", "exploit", "cwe"]):
+        return ChatResponse(
+            reply=(
+                "🔬 **Vulnerability & Zero-Day Threats**\n\n"
+                "A **CVE (Common Vulnerabilities and Exposures)** is a publicly disclosed software vulnerability.\n"
+                "A **zero-day** is a vulnerability that is actively exploited *before* the vendor has released a patch.\n\n"
+                "**DefenXion posture:**\n"
+                "• IDS rules are updated to flag known exploit signatures\n"
+                "• Any inbound payload matching CVE patterns triggers ALERT_ADMIN\n"
+                "• Critical exploits auto-trigger CRITICAL_BLOCK on the source IP\n\n"
+                "**Best practices:**\n"
+                "• Patch OS & dependencies within 48 h of CVE publication\n"
+                "• Enable automatic security updates\n"
+                "• Monitor NIST NVD (nvd.nist.gov) for new CVEs\n"
+                "• Use WAF rules to block known exploit payloads at the edge"
+            ),
+            action_url="defense"
+        )
+
+    # ── COMPLIANCE / AUDIT ────────────────────────────────
+    if any(k in msg for k in ["audit", "compliance", "pci", "gdpr", "hipaa", "iso 27001", "sox", "nist", "regulation", "log export"]):
+        return ChatResponse(
+            reply=(
+                "📋 **Audit & Compliance**\n\n"
+                "DefenXion captures all security events in tamper-evident logs suitable for compliance audits.\n\n"
+                "**Supported frameworks:**\n"
+                "• **PCI-DSS** — Network intrusion detection, access logging, IP blocking evidence\n"
+                "• **GDPR** — Access audit trails, failed login records, data-breach indicators\n"
+                "• **HIPAA** — Authentication logs, session records, anomaly reports\n"
+                "• **ISO 27001** — Incident management logs, risk evidence, response timelines\n\n"
+                "**To export logs for audit:**\n"
+                "1. Go to **Reports & Logs** module\n"
+                "2. Generate a report for the required period\n"
+                "3. Click **PDF** for a formatted audit report or **CSV** for raw data\n\n"
+                "All exports include timestamps, source IPs, action taken, and analyst ID."
+            ),
+            action_url="reports"
+        )
 
     # ── TRAFFIC / ML STATS ────────────────────────────────
     if any(k in msg for k in ["traffic", "analytics", "ml", "model", "accuracy", "detection", "prediction"]):
@@ -323,10 +569,14 @@ def handle_chat_message(
             "📡 `system status` — Overall health snapshot\n"
             "🚨 `latest threats` — Recent high-severity alerts\n"
             "🎯 `top attacking IPs` — Most active attackers\n"
-            "📊 `generate report` — Full security summary\n"
+            "📊 `generate report` — Full security summary (CSV)\n"
+            "📄 `download pdf` — Branded PDF security report\n"
+            "📈 `threat trends` — Time-bucketed attack trends\n"
+            "🔒 `blocked IPs` — IPs blocked by the IDS\n"
             "🔑 `failed logins` — Account security check\n"
             "🛡️ `firewall rules` — Active defense status\n"
-            "📈 `traffic analytics` — ML detection stats\n"
+            "🔬 `CVE / zero-day` — Vulnerability explanations\n"
+            "📋 `compliance audit` — PCI, GDPR, HIPAA guidance\n"
             "📚 `explain DDoS` — Any attack type explained\n\n"
             "What would you like to know?"
         )
