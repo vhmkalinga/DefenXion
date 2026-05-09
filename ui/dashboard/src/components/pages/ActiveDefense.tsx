@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Shield, Lock, Zap, AlertTriangle, CheckCircle, XCircle, Plus, Pencil, Trash2, Save, X, Filter } from 'lucide-react';
-import { getActiveResponses, getDefenseModules, toggleDefenseModule, getDefenseSettings, updateDefenseSettings, getFirewallRules, createFirewallRule, updateFirewallRule, deleteFirewallRule } from '../../services/api';
+import { Shield, Lock, Zap, AlertTriangle, CheckCircle, XCircle, Plus, Pencil, Trash2, Save, X, Filter, Terminal, ShieldOff, ShieldCheck, RefreshCw, Ban, Unlock } from 'lucide-react';
+import { getActiveResponses, getDefenseModules, toggleDefenseModule, getDefenseSettings, updateDefenseSettings, getFirewallRules, createFirewallRule, updateFirewallRule, deleteFirewallRule, getFirewallStatus, manualBlockIp, manualUnblockIp, getOsFirewallRules } from '../../services/api';
 import { Switch } from '../ui/switch';
 import { toast } from 'sonner';
 import { Slider } from '../ui/slider';
@@ -36,19 +36,66 @@ export function ActiveDefense() {
   const [editingRule, setEditingRule]   = useState<number | null>(null);
   const [editData, setEditData]         = useState<any>({});
   const [filterAction, setFilterAction] = useState('ALL');
+  // Windows Firewall (real OS)
+  const [fwStatus, setFwStatus]         = useState<any>(null);
+  const [osRules, setOsRules]           = useState<any[]>([]);
+  const [blockIp, setBlockIp]           = useState('');
+  const [blockDir, setBlockDir]         = useState('both');
+  const [blockNote, setBlockNote]       = useState('');
+  const [blocking, setBlocking]         = useState(false);
+  const [unblocking, setUnblocking]     = useState<string | null>(null);
+  const [osRulesLoading, setOsRulesLoading] = useState(false);
 
   const fetchAll = useCallback(() => {
     getDefenseModules().then(setModules).catch(console.error);
     getDefenseSettings().then(setSettings).catch(console.error);
     getFirewallRules().then(setRules).catch(console.error);
     getActiveResponses().then(r => { if (r?.length > 0) setLiveResponses(r); }).catch(console.error);
+    getFirewallStatus().then(setFwStatus).catch(console.error);
   }, []);
 
-  useEffect(() => { fetchAll(); }, []);
+  const fetchOsRules = useCallback(() => {
+    setOsRulesLoading(true);
+    getOsFirewallRules().then(r => setOsRules(r.rules || [])).catch(console.error).finally(() => setOsRulesLoading(false));
+  }, []);
+
+  useEffect(() => { fetchAll(); fetchOsRules(); }, [fetchAll, fetchOsRules]);
 
   const handleToggleModule = async (name: string) => {
     try { const r = await toggleDefenseModule(name); toast.success(r.message); fetchAll(); }
     catch { toast.error('Failed to toggle module'); }
+  };
+
+  const handleManualBlock = async () => {
+    if (!blockIp.trim()) { toast.error('Enter an IP address'); return; }
+    setBlocking(true);
+    try {
+      const r = await manualBlockIp(blockIp.trim(), blockDir, blockNote);
+      if (r.success) {
+        toast.success(`🔥 ${r.message}`);
+        setBlockIp(''); setBlockNote('');
+        fetchAll(); fetchOsRules();
+      } else {
+        toast.error(r.message || 'Block failed');
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Block failed — run backend as Administrator');
+    } finally {
+      setBlocking(false);
+    }
+  };
+
+  const handleUnblock = async (ip: string) => {
+    setUnblocking(ip);
+    try {
+      const r = await manualUnblockIp(ip);
+      toast.success(`Unblocked ${ip}`);
+      fetchAll(); fetchOsRules();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || 'Unblock failed — run backend as Administrator');
+    } finally {
+      setUnblocking(null);
+    }
   };
 
   const handleAddRule = async () => {
@@ -203,6 +250,155 @@ export function ActiveDefense() {
               <span>1h</span><span>24h</span><span>72h</span><span>1 week</span>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── Windows Firewall Panel ── */}
+      <div className="ad-row" style={{ ...CARD, overflow: 'hidden', marginBottom: 20 }}>
+        {/* panel header */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 24px', borderBottom:'1px solid #21262D', background:'rgba(13,17,23,0.4)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            <div style={{ width:38, height:38, borderRadius:10, background:'rgba(31,111,235,0.1)', border:'1px solid rgba(31,111,235,0.2)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <Terminal size={18} color="#58A6FF" />
+            </div>
+            <div>
+              <div style={{ color:'#E6EDF3', fontSize:14, fontWeight:700 }}>Windows Firewall — Real OS Enforcement</div>
+              <div style={{ color:'#7D8590', fontSize:12, marginTop:2 }}>netsh advfirewall · Actual kernel-level IP blocking</div>
+            </div>
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            {fwStatus ? (
+              <span style={{ display:'flex', alignItems:'center', gap:6, padding:'5px 12px', borderRadius:20, fontSize:11, fontWeight:700, color: fwStatus.admin_privileges ? '#3FB950' : '#FFA657', background: fwStatus.admin_privileges ? 'rgba(63,185,80,0.1)' : 'rgba(255,166,87,0.1)', border:`1px solid ${fwStatus.admin_privileges ? 'rgba(63,185,80,0.3)' : 'rgba(255,166,87,0.3)'}` }}>
+                {fwStatus.admin_privileges ? <ShieldCheck size={13} /> : <ShieldOff size={13} />}
+                {fwStatus.admin_privileges ? 'Admin ✓' : 'No Admin'}
+              </span>
+            ) : null}
+            <button onClick={() => { fetchOsRules(); toast.success('Refreshed OS rules'); }}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'5px 10px', borderRadius:8, background:'rgba(255,255,255,0.05)', border:'1px solid #30363D', color:'#C9D1D9', fontSize:11, fontFamily:'inherit', cursor:'pointer' }}>
+              <RefreshCw size={12} style={{ animation: osRulesLoading ? 'ad-blink 1s linear infinite' : 'none' }} /> Refresh
+            </button>
+          </div>
+        </div>
+
+
+        {/* admin warning */}
+        {fwStatus && !fwStatus.admin_privileges && (
+          <div style={{ margin:'16px 24px', padding:'12px 16px', borderRadius:10, background:'rgba(255,166,87,0.08)', border:'1px solid rgba(255,166,87,0.25)', display:'flex', alignItems:'center', gap:10 }}>
+            <AlertTriangle size={16} color="#FFA657" />
+            <span style={{ color:'#FFA657', fontSize:12 }}>
+              Backend is <strong>not running as Administrator</strong>. Real firewall blocks will fail.
+              Restart <code style={{ background:'rgba(0,0,0,0.3)', padding:'1px 5px', borderRadius:4 }}>start.bat</code> as Administrator to enable real enforcement.
+            </span>
+          </div>
+        )}
+
+        {/* manual block form */}
+        <div style={{ padding:'18px 24px', borderBottom:'1px solid #21262D' }}>
+          <div style={{ color:'#C9D1D9', fontSize:12, fontWeight:600, marginBottom:12, display:'flex', alignItems:'center', gap:7 }}>
+            <Ban size={14} color="#FF4D4D" /> Manual IP Block
+          </div>
+          <div style={{ display:'flex', gap:10, flexWrap:'wrap', alignItems:'flex-end' }}>
+            <div style={{ flex:1, minWidth:160 }}>
+              <div style={{ color:'#7D8590', fontSize:11, marginBottom:4 }}>IP Address / CIDR</div>
+              <input
+                value={blockIp} onChange={e => setBlockIp(e.target.value)}
+                placeholder="e.g. 45.33.32.156 or 192.168.0.0/24"
+                onKeyDown={e => e.key === 'Enter' && handleManualBlock()}
+                style={{ width:'100%', background:'rgba(13,17,23,0.9)', border:'1px solid #30363D', borderRadius:8, padding:'8px 12px', color:'#E6EDF3', fontSize:13, outline:'none', fontFamily:'monospace', boxSizing:'border-box' }}
+              />
+            </div>
+            <div style={{ minWidth:120 }}>
+              <div style={{ color:'#7D8590', fontSize:11, marginBottom:4 }}>Direction</div>
+              <select value={blockDir} onChange={e => setBlockDir(e.target.value)}
+                style={{ width:'100%', background:'rgba(13,17,23,0.9)', border:'1px solid #30363D', borderRadius:8, padding:'8px 12px', color:'#E6EDF3', fontSize:12, outline:'none', fontFamily:'inherit', cursor:'pointer' }}>
+                <option value="both">Both (In + Out)</option>
+                <option value="in">Inbound only</option>
+                <option value="out">Outbound only</option>
+              </select>
+            </div>
+            <div style={{ flex:1, minWidth:140 }}>
+              <div style={{ color:'#7D8590', fontSize:11, marginBottom:4 }}>Note (optional)</div>
+              <input value={blockNote} onChange={e => setBlockNote(e.target.value)} placeholder="Reason for block…"
+                style={{ width:'100%', background:'rgba(13,17,23,0.9)', border:'1px solid #30363D', borderRadius:8, padding:'8px 12px', color:'#E6EDF3', fontSize:12, outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} />
+            </div>
+            <button onClick={handleManualBlock} disabled={blocking}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 18px', borderRadius:8, background: blocking ? '#21262D' : 'linear-gradient(135deg,#FF4D4D,#cc3333)', border:'none', color:'white', fontSize:12, fontWeight:700, fontFamily:'inherit', cursor: blocking ? 'not-allowed' : 'pointer', boxShadow: blocking ? 'none' : '0 4px 16px rgba(255,77,77,0.35)', transition:'all 0.2s', whiteSpace:'nowrap' }}>
+              {blocking ? <RefreshCw size={13} style={{ animation:'ad-blink 1s linear infinite' }} /> : <Ban size={13} />}
+              {blocking ? 'Blocking…' : '🔥 Block IP'}
+            </button>
+          </div>
+        </div>
+
+        {/* OS rules table */}
+        <div style={{ padding:'16px 24px' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <div style={{ color:'#C9D1D9', fontSize:12, fontWeight:600, display:'flex', alignItems:'center', gap:7 }}>
+              <Shield size={14} color="#58A6FF" />
+              Active OS Firewall Rules
+              <span style={{ padding:'2px 8px', borderRadius:20, fontSize:10, fontWeight:700, color:'#FF4D4D', background:'rgba(255,77,77,0.1)', border:'1px solid rgba(255,77,77,0.25)' }}>
+                {fwStatus?.defenxion_rules_count ?? osRules.length} rules
+              </span>
+            </div>
+          </div>
+
+          {osRulesLoading ? (
+            <div style={{ padding:'24px 0', textAlign:'center', color:'#484F58', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+              <RefreshCw size={14} style={{ animation:'ad-blink 1s linear infinite' }} /> Loading OS rules…
+            </div>
+          ) : !fwStatus?.admin_privileges ? (
+            <div style={{ padding:'24px 0', textAlign:'center', color:'#484F58', fontSize:12 }}>
+              OS rules hidden — Administrator access required
+            </div>
+          ) : osRules.length === 0 ? (
+            <div style={{ padding:'24px 0', textAlign:'center', color:'#484F58', fontSize:12 }}>
+              No DefenXion-managed firewall rules found in Windows Firewall
+            </div>
+          ) : (
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                <thead>
+                  <tr style={{ borderBottom:'1px solid #21262D' }}>
+                    {['Rule Name','Direction','Action','Remote IP','Enabled',''].map(h => (
+                      <th key={h} style={{ padding:'8px 12px', textAlign:'left', color:'#7D8590', fontSize:11, fontWeight:600, whiteSpace:'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {osRules.map((r: any, i: number) => {
+                    const ip = r.remoteip || r.name?.replace('DefenXion_Block_', '').replace(/_in$|_out$/, '') || '?';
+                    return (
+                      <tr key={i} style={{ borderBottom:'1px solid #1a1f28', transition:'background 0.15s' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = 'rgba(22,27,34,0.5)')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
+                        <td style={{ padding:'9px 12px', color:'#E6EDF3', fontFamily:'monospace', fontSize:11 }}>{r.name}</td>
+                        <td style={{ padding:'9px 12px' }}>
+                          <span style={{ padding:'2px 7px', borderRadius:20, fontSize:10, fontWeight:600, color: r.direction?.toLowerCase()==='in' ? '#FF4D4D' : r.direction?.toLowerCase()==='out' ? '#FFA657' : '#58A6FF', background:'rgba(255,255,255,0.05)', border:'1px solid #30363D' }}>
+                            {r.direction || '—'}
+                          </span>
+                        </td>
+                        <td style={{ padding:'9px 12px' }}>
+                          <span style={{ color:'#FF4D4D', fontWeight:700, fontSize:11 }}>{r.action || 'Block'}</span>
+                        </td>
+                        <td style={{ padding:'9px 12px', fontFamily:'monospace', fontSize:11, color:'#C9D1D9' }}>{r.remoteip || '—'}</td>
+                        <td style={{ padding:'9px 12px' }}>
+                          {r.enabled?.toLowerCase() === 'yes'
+                            ? <span style={{ display:'flex', alignItems:'center', gap:4, color:'#3FB950', fontSize:11 }}><CheckCircle size={11} /> Yes</span>
+                            : <span style={{ display:'flex', alignItems:'center', gap:4, color:'#484F58', fontSize:11 }}><XCircle size={11} /> No</span>}
+                        </td>
+                        <td style={{ padding:'9px 12px' }}>
+                          <button onClick={() => handleUnblock(ip)} disabled={unblocking === ip}
+                            style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 10px', borderRadius:7, background:'rgba(255,166,87,0.08)', border:'1px solid rgba(255,166,87,0.25)', color:'#FFA657', fontSize:10, fontWeight:600, fontFamily:'inherit', cursor: unblocking===ip ? 'not-allowed' : 'pointer' }}>
+                            {unblocking === ip ? <RefreshCw size={10} style={{ animation:'ad-blink 1s linear infinite' }} /> : <Unlock size={10} />}
+                            {unblocking === ip ? 'Removing…' : 'Unblock'}
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
 

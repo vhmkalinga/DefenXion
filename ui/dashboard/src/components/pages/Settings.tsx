@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Shield, Mail, Database, Users, Globe, Lock, Bell, Slack, Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive, FileText, Trash2, UserPlus, X, Crown, Key, Loader2, Settings as SI } from "lucide-react";
+import { Shield, Mail, Database, Users, Globe, Lock, Bell, Slack, Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive, FileText, Trash2, UserPlus, X, Crown, Key, Loader2, Settings as SI, RefreshCw, AlertTriangle, Copy, Check } from "lucide-react";
 import { Switch } from "../ui/switch";
 import { toast } from 'sonner';
-import { getAppSettings, updateAppSettings, changePassword, getSystemInfo, listUsers, createUser, deleteUser, adminResetPassword, getMe, setup2FA, verifySetup2FA, disable2FA } from '../../services/api';
+import { getAppSettings, updateAppSettings, changePassword, getSystemInfo, listUsers, createUser, deleteUser, adminResetPassword, getMe, setup2FA, verifySetup2FA, disable2FA, listResetRequests, approveResetRequest, rejectResetRequest, dismissResetRequest } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -43,12 +43,21 @@ export function Settings() {
 
   const [isLoading, setIsLoading] = useState(true);
 
+  // ── Access Requests (Forgot Password) ──
+  const [resetRequests, setResetRequests] = useState<any[]>([]);
+  const [rejectTarget, setRejectTarget] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [isRejectingId, setIsRejectingId] = useState<string | null>(null);
+  const [approvedTempPw, setApprovedTempPw] = useState<{id: string; pw: string; copied: boolean} | null>(null);
+  const [isApprovingId, setIsApprovingId] = useState<string | null>(null);
+
   useEffect(() => { 
     Promise.all([
       getAppSettings().then(d => { if(d) setSettings(d) }),
       getSystemInfo().then(setSystemInfo),
       listUsers().then(setTeamUsers),
-      getMe().then(setProfile)
+      getMe().then(setProfile),
+      listResetRequests().then(setResetRequests).catch(() => {})
     ]).finally(() => setIsLoading(false));
   }, []);
 
@@ -96,6 +105,45 @@ export function Settings() {
   };
   const handleDeleteUser = async (u:string) => { if(!confirm(`Delete "${u}"?`))return; try{await deleteUser(u);toast.success(`Deleted`);listUsers().then(setTeamUsers);getSystemInfo().then(setSystemInfo)}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')} };
   const handleResetPw = async () => { if(!resetUser)return; if(adminResetPw.length<8){toast.error('Min 8 chars');return} setIsResetting(true); try{await adminResetPassword(resetUser,adminResetPw);toast.success(`Reset for ${resetUser}`);setResetUser(null);setAdminResetPw('')}catch(e:any){toast.error(e?.response?.data?.detail||'Failed')}finally{setIsResetting(false)} };
+
+  const handleApproveRequest = async (requestId: string) => {
+    setIsApprovingId(requestId);
+    try {
+      const res = await approveResetRequest(requestId);
+      setApprovedTempPw({ id: requestId, pw: res.temp_password, copied: false });
+      if (res.email_sent) toast.success('Approved! Notification email sent.');
+      else toast.success('Approved! Share the temp password with the user.');
+      listResetRequests().then(setResetRequests);
+    } catch(e: any) {
+      toast.error(e?.response?.data?.detail || 'Failed to approve request');
+    } finally {
+      setIsApprovingId(null);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    setIsRejectingId(requestId);
+    try {
+      await rejectResetRequest(requestId, rejectReason);
+      toast.success('Request rejected.');
+      setRejectTarget(null);
+      setRejectReason('');
+      listResetRequests().then(setResetRequests);
+    } catch(e: any) {
+      toast.error(e?.response?.data?.detail || 'Failed to reject request');
+    } finally {
+      setIsRejectingId(null);
+    }
+  };
+
+  const handleDismissRequest = async (requestId: string) => {
+    try {
+      await dismissResetRequest(requestId);
+      listResetRequests().then(setResetRequests);
+    } catch(e: any) {
+      toast.error('Failed to dismiss');
+    }
+  };
 
   const handleSetup2FA = async () => {
     try {
@@ -167,9 +215,15 @@ export function Settings() {
 
     {/* Tabs */}
     <div className="sr" style={{display:'flex',gap:4,marginBottom:20,background:'rgba(22,27,34,0.6)',borderRadius:10,padding:3,width:'fit-content'}}>
-      {['general','notifications','security','integrations'].map(t=>(
-        <button key={t} onClick={()=>setActiveTab(t)} style={{padding:'8px 18px',borderRadius:8,border:'none',fontSize:13,fontWeight:600,fontFamily:'inherit',cursor:'pointer',textTransform:'capitalize',transition:'all .2s',background:activeTab===t?'linear-gradient(135deg,#1F6FEB,#2679f5)':'transparent',color:activeTab===t?'white':'#7D8590',boxShadow:activeTab===t?'0 2px 8px rgba(31,111,235,0.3)':'none'}}>{t}</button>
-      ))}
+      {(['general','notifications','security','integrations','access-requests'] as const).map(t => {
+        const pendingCount = t === 'access-requests' ? resetRequests.filter(r => r.status === 'pending').length : 0;
+        return (
+          <button key={t} onClick={()=>setActiveTab(t)} style={{padding:'8px 18px',borderRadius:8,border:'none',fontSize:13,fontWeight:600,fontFamily:'inherit',cursor:'pointer',textTransform:'capitalize',transition:'all .2s',background:activeTab===t?'linear-gradient(135deg,#1F6FEB,#2679f5)':'transparent',color:activeTab===t?'white':'#7D8590',boxShadow:activeTab===t?'0 2px 8px rgba(31,111,235,0.3)':'none',display:'flex',alignItems:'center',gap:6,position:'relative'}}>
+            {t === 'access-requests' ? 'Access Requests' : t}
+            {pendingCount > 0 && <span style={{background:'#FF4D4D',color:'white',borderRadius:20,fontSize:10,fontWeight:700,padding:'1px 5px',minWidth:16,textAlign:'center'}}>{pendingCount}</span>}
+          </button>
+        );
+      })}
     </div>
 
     {isLoading ? (
@@ -327,6 +381,111 @@ export function Settings() {
           </div>);})}</div>
       </div>
     </div></div>}
+
+    {/* Access Requests */}
+    {activeTab==='access-requests'&&<div className="sr" style={{...C,padding:'20px 24px'}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:16}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <RefreshCw size={16} color="#FFA657"/>
+          <div><div style={{color:'#E6EDF3',fontSize:14,fontWeight:600}}>Password Reset Requests</div><div style={{color:'#7D8590',fontSize:12}}>Review and approve or reject user access requests</div></div>
+        </div>
+        <button onClick={()=>listResetRequests().then(setResetRequests)} style={{display:'flex',alignItems:'center',gap:5,padding:'6px 12px',borderRadius:8,background:'rgba(255,255,255,0.04)',border:'1px solid #30363D',color:'#7D8590',fontSize:12,fontFamily:'inherit',cursor:'pointer'}}><RefreshCw size={12}/>Refresh</button>
+      </div>
+      {resetRequests.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px 0',color:'#7D8590'}}>
+          <CheckCircle size={32} color="#3FB950" style={{margin:'0 auto 12px',display:'block'}}/>
+          <div style={{fontSize:14,fontWeight:500,color:'#E6EDF3',marginBottom:4}}>All clear!</div>
+          <div style={{fontSize:13}}>No password reset requests at this time.</div>
+        </div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {resetRequests.map((req: any) => {
+            const isPending = req.status === 'pending';
+            const isApproved = req.status === 'approved';
+            const statusColor = isPending ? '#FFA657' : isApproved ? '#3FB950' : '#FF4D4D';
+            const reqId = req.id || req._id || req.request_id || JSON.stringify(req.requested_at);
+            return (
+              <div key={reqId} style={{background:'rgba(13,17,23,0.5)',borderRadius:12,padding:'14px 16px',border:`1px solid ${isPending ? 'rgba(255,166,87,0.2)' : '#21262D'}`}}>
+                <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:12}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                      <span style={{color:'#E6EDF3',fontSize:14,fontWeight:600}}>{req.username}</span>
+                      <span style={{padding:'2px 8px',borderRadius:20,fontSize:10,fontWeight:700,color:statusColor,background:`${statusColor}15`,border:`1px solid ${statusColor}33`}}>{req.status.toUpperCase()}</span>
+                    </div>
+                    {req.reason && <div style={{color:'#7D8590',fontSize:12,marginBottom:4}}>💬 {req.reason}</div>}
+                    <div style={{display:'flex',gap:12,flexWrap:'wrap'}}>
+                      <span style={{color:'#484F58',fontSize:11}}>📅 {req.requested_at}</span>
+                      {req.email && <span style={{color:'#484F58',fontSize:11}}>✉ {req.email}</span>}
+                      {req.reviewed_by && <span style={{color:'#484F58',fontSize:11}}>👤 Reviewed by {req.reviewed_by}</span>}
+                      {req.reject_reason && <span style={{color:'#FF4D4D',fontSize:11}}>Reason: {req.reject_reason}</span>}
+                    </div>
+                    {/* Show temp password chip if just approved */}
+                    {approvedTempPw?.id === reqId && (
+                      <div style={{marginTop:10,background:'rgba(63,185,80,0.08)',border:'1px solid rgba(63,185,80,0.25)',borderRadius:8,padding:'8px 12px',display:'flex',alignItems:'center',gap:10}}>
+                        <div style={{flex:1}}>
+                          <div style={{color:'#7D8590',fontSize:11,marginBottom:2}}>Temporary Password (share with user)</div>
+                          <span style={{color:'#3FB950',fontFamily:'monospace',fontSize:14,fontWeight:700,letterSpacing:'0.05em'}}>{approvedTempPw.pw}</span>
+                        </div>
+                        <button onClick={() => { navigator.clipboard.writeText(approvedTempPw.pw); setApprovedTempPw(prev => prev ? {...prev, copied: true} : null); setTimeout(() => setApprovedTempPw(prev => prev ? {...prev, copied: false} : null), 2000); }} style={{padding:'5px 10px',borderRadius:6,background:approvedTempPw.copied?'rgba(63,185,80,0.2)':'rgba(255,255,255,0.06)',border:'1px solid rgba(63,185,80,0.3)',color:approvedTempPw.copied?'#3FB950':'#7D8590',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                          {approvedTempPw.copied ? <><Check size={12}/>Copied</> : <><Copy size={12}/>Copy</>}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'flex-start'}}>
+                    {isPending && (
+                      <>
+                        <button
+                          disabled={isApprovingId === reqId}
+                          onClick={() => handleApproveRequest(reqId)}
+                          style={{padding:'6px 12px',borderRadius:8,border:'none',background:'linear-gradient(135deg,#3FB950,#2ea043)',color:'white',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:4,opacity:isApprovingId===reqId?0.6:1}}
+                        >
+                          {isApprovingId===reqId ? <Loader2 size={12} style={{animation:'ss .8s linear infinite'}}/> : <CheckCircle size={12}/>}
+                          Approve
+                        </button>
+                        <button
+                          onClick={() => { setRejectTarget(reqId); setRejectReason(''); }}
+                          style={{padding:'6px 12px',borderRadius:8,border:'1px solid rgba(255,77,77,0.3)',background:'rgba(255,77,77,0.08)',color:'#FF4D4D',fontSize:11,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}
+                        >
+                          <X size={12}/>Reject
+                        </button>
+                      </>
+                    )}
+                    {!isPending && (
+                      <button onClick={() => handleDismissRequest(reqId)} style={{padding:'5px 8px',borderRadius:6,background:'rgba(255,255,255,0.04)',border:'1px solid #30363D',color:'#7D8590',fontSize:11,cursor:'pointer',display:'flex',alignItems:'center',gap:4}}>
+                        <Trash2 size={12}/>Dismiss
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* Inline reject reason input */}
+                {rejectTarget === reqId && (
+                  <div style={{marginTop:12,background:'rgba(13,17,23,0.6)',borderRadius:8,padding:'12px',border:'1px solid rgba(255,77,77,0.2)'}}>
+                    <div style={{color:'#C9D1D9',fontSize:12,marginBottom:6}}>Rejection reason <span style={{color:'#7D8590'}}>(optional)</span></div>
+                    <input
+                      value={rejectReason}
+                      onChange={e=>setRejectReason(e.target.value)}
+                      placeholder="e.g. Identity could not be verified"
+                      style={{...I,marginBottom:10,fontSize:12}}
+                    />
+                    <div style={{display:'flex',gap:8}}>
+                      <button onClick={() => setRejectTarget(null)} style={{flex:1,padding:'7px 0',borderRadius:7,border:'1px solid #30363D',background:'transparent',color:'#7D8590',fontSize:12,fontWeight:600,cursor:'pointer'}}>Cancel</button>
+                      <button
+                        disabled={isRejectingId===reqId}
+                        onClick={() => handleRejectRequest(reqId)}
+                        style={{flex:1,padding:'7px 0',borderRadius:7,border:'none',background:'linear-gradient(135deg,#FF4D4D,#d73a49)',color:'white',fontSize:12,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:4}}
+                      >
+                        {isRejectingId===reqId?<Loader2 size={12} style={{animation:'ss .8s linear infinite'}}/>:<X size={12}/>} Confirm Reject
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>}
       </>
     )}
 
