@@ -378,9 +378,78 @@ export const disable2FA = async (password: string) => {
   return response.data;
 };
 
+// ── Forgot Password (Admin-Approval Workflow) ──
+export const submitForgotPassword = async (username: string, reason: string) => {
+  const response = await axios.post("http://localhost:8000/auth/forgot-password", { username, reason });
+  return response.data;
+};
+
+export const listResetRequests = async () => {
+  const response = await api.get("/auth/forgot-password/requests");
+  return response.data;
+};
+
+export const approveResetRequest = async (requestId: string) => {
+  const response = await api.post(`/auth/forgot-password/requests/${requestId}/approve`);
+  return response.data;
+};
+
+export const rejectResetRequest = async (requestId: string, reason: string) => {
+  const response = await api.post(`/auth/forgot-password/requests/${requestId}/reject`, { reason });
+  return response.data;
+};
+
+export const dismissResetRequest = async (requestId: string) => {
+  const response = await api.delete(`/auth/forgot-password/requests/${requestId}`);
+  return response.data;
+};
+
+export const forcedChangePassword = async (newPassword: string) => {
+  const response = await api.post("/auth/change-password-forced", { new_password: newPassword });
+  return response.data;
+};
+
 // ── Security Copilot ──
 export const sendChatMessage = async (message: string) => {
   const response = await api.post("/chat", { message });
+  return response.data;
+};
+
+// ── PCAP Deep Packet Inspection ──
+export const analyzePcap = async (file: File) => {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await api.post("/pcap/analyze", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
+    timeout: 120_000, // parsing large PCAPs can take time
+  });
+  return response.data;
+};
+
+// ── Windows Firewall (Real OS-Level) ──
+export const getFirewallStatus = async () => {
+  const response = await api.get("/firewall/status");
+  return response.data;
+};
+
+export const manualBlockIp = async (ip: string, direction: string = "both", note: string = "") => {
+  const response = await api.post("/firewall/block", { ip, direction, note });
+  return response.data;
+};
+
+export const manualUnblockIp = async (ip: string) => {
+  const response = await api.delete(`/firewall/block/${ip}`);
+  return response.data;
+};
+
+export const getOsFirewallRules = async () => {
+  const response = await api.get("/firewall/os-rules");
+  return response.data;
+};
+
+// ── Network Graph ──
+export const getNetworkGraph = async () => {
+  const response = await api.get("/dashboard/analytics/network-graph");
   return response.data;
 };
 
