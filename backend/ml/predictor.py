@@ -18,10 +18,10 @@ def get_model(model_path=None):
 def clear_model_cache():
     get_model.cache_clear()
 
-def predict(features_dict: dict, model_path: str = None) -> tuple[int, float]:
+def predict(features_dict: dict, model_path: str = None) -> tuple[int, float, list]:
     """
     Runs prediction using the loaded ML model.
-    Returns (prediction_class, confidence_score)
+    Returns (prediction_class, confidence_score, explanations)
     """
     model = get_model(model_path)
     feature_names = model.feature_names_in_
@@ -35,4 +35,24 @@ def predict(features_dict: dict, model_path: str = None) -> tuple[int, float]:
     prediction = int(model.predict(feature_vector)[0])
     confidence = float(model.predict_proba(feature_vector)[0].max())
     
-    return prediction, confidence
+    # XAI: Extract top contributing features
+    explanations = []
+    if hasattr(model, "feature_importances_"):
+        importances = model.feature_importances_
+        feat_imp = []
+        for i, f_name in enumerate(feature_names):
+            val = features_dict.get(f_name, 0.0)
+            if val > 0: # Only care about features that were active in this packet
+                feat_imp.append((f_name, importances[i], val))
+        
+        # Sort by importance
+        feat_imp.sort(key=lambda x: x[1], reverse=True)
+        
+        for f_name, imp, val in feat_imp[:3]:
+            explanations.append({
+                "feature": f_name,
+                "importance": round(float(imp * 100), 2),
+                "value": val
+            })
+            
+    return prediction, confidence, explanations

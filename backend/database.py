@@ -35,6 +35,8 @@ defense_settings_collection = db["defense_settings"]
 reports_collection = db["reports"]
 # App Settings (general, notifications, etc.)
 app_settings_collection = db["app_settings"]
+# Password Reset Requests (admin-approval workflow)
+password_reset_requests_collection = db["password_reset_requests"]
 
 # --------------------------------------------------
 # Indexes (idempotent – safe to run every startup)
@@ -53,3 +55,5 @@ logs_collection.create_index(
 )
 trained_models_collection.create_index([("timestamp", DESCENDING)])
 trained_models_collection.create_index([("status", ASCENDING)])
+password_reset_requests_collection.create_index([("status", ASCENDING)])
+password_reset_requests_collection.create_index([("requested_at", DESCENDING)])

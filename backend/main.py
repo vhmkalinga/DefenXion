@@ -12,7 +12,7 @@ Features:
 - Pagination for Logs & Alerts
 """
 
-from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, BackgroundTasks, Request
+from fastapi import FastAPI, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect, BackgroundTasks, Request, UploadFile, File
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
@@ -175,6 +175,7 @@ class PredictionResponse(BaseModel):
     confidence: float
     action_taken: str
     timestamp: str
+    explanations: list = []
 
 
 class CreateUserRequest(BaseModel):
@@ -219,7 +220,7 @@ def predict_attack(
     active_model_path = active_model["filepath"] if active_model and "filepath" in active_model else None
 
     try:
-        prediction, confidence = predict(data.features, active_model_path)
+        prediction, confidence, explanations = predict(data.features, active_model_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"ML Inference failed: {str(e)}")
         
@@ -230,6 +231,7 @@ def predict_attack(
         "destination_ip": data.destination_ip,
         "prediction": prediction,
         "confidence": confidence,
+        "explanations": explanations,
         "timestamp": timestamp,
         "triggered_by": current_user["username"]
     }
@@ -241,6 +243,7 @@ def predict_attack(
         "source_ip": data.source_ip,
         "prediction": prediction,
         "confidence": confidence,
+        "explanations": explanations,
         "triggered_by": current_user["username"],
         "timestamp": timestamp
     })
@@ -274,8 +277,114 @@ def predict_attack(
         prediction=prediction,
         confidence=confidence,
         action_taken=action,
-        timestamp=timestamp
+        timestamp=timestamp,
+        explanations=explanations
     )
+
+
+# --------------------------------------------------
+# PCAP Deep Packet Inspection Endpoint
+# --------------------------------------------------
+@app.post("/pcap/analyze")
+async def analyze_pcap(
+    file: UploadFile = File(...),
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Accept a .pcap file upload, extract per-flow features using Scapy,
+    run every flow through the active ML model, and return classified results.
+    """
+    if not file.filename.endswith((".pcap", ".pcapng", ".cap")):
+        raise HTTPException(status_code=400, detail="Only .pcap / .pcapng / .cap files are supported.")
+
+    contents = await file.read()
+    if len(contents) == 0:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+    if len(contents) > 50 * 1024 * 1024:  # 50 MB guard
+        raise HTTPException(status_code=413, detail="File too large. Maximum 50 MB.")
+
+    from backend.pcap_engine import extract_features_from_pcap
+    from backend.ml.predictor import predict
+
+    try:
+        flows = extract_features_from_pcap(contents)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if not flows:
+        return {"filename": file.filename, "total_flows": 0, "results": []}
+
+    active_model = trained_models_collection.find_one({"status": "Active"})
+    active_model_path = active_model["filepath"] if active_model and "filepath" in active_model else None
+
+    results = []
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    attack_count = 0
+
+    for flow in flows:
+        try:
+            prediction, confidence, explanations = predict(flow["features"], active_model_path)
+        except Exception:
+            prediction, confidence, explanations = 0, 0.5, []
+
+        label = "Attack" if prediction == 1 else "Benign"
+        severity = "Low"
+        if prediction == 1:
+            attack_count += 1
+            if confidence >= 0.95:
+                severity = "Critical"
+            elif confidence >= 0.85:
+                severity = "High"
+            else:
+                severity = "Medium"
+
+        results.append({
+            "flow_id":      flow["flow_id"],
+            "src_ip":       flow["src_ip"],
+            "dst_ip":       flow["dst_ip"],
+            "src_port":     flow["src_port"],
+            "dst_port":     flow["dst_port"],
+            "protocol":     flow["protocol"],
+            "pkt_count":    flow["pkt_count"],
+            "prediction":   label,
+            "confidence":   round(confidence * 100, 2),
+            "severity":     severity,
+            "explanations": explanations,
+            "timestamp":    timestamp,
+        })
+
+    # Persist attack flows into detections collection
+    for r in results:
+        if r["prediction"] == "Attack":
+            detections_collection.insert_one({
+                "source_ip":      r["src_ip"],
+                "destination_ip": r["dst_ip"],
+                "dst_port":       r["dst_port"],
+                "action":         "BLOCK_IP" if r["confidence"] >= 85 else "ALERT_ADMIN",
+                "confidence":     r["confidence"] / 100,
+                "attack_type":    "PCAP Import",
+                "timestamp":      timestamp,
+                "triggered_by":   current_user["username"],
+                "explanations":   r["explanations"],
+            })
+
+    logs_collection.insert_one({
+        "event_type":  "PCAP_ANALYZE",
+        "filename":    file.filename,
+        "total_flows": len(flows),
+        "attacks":     attack_count,
+        "triggered_by": current_user["username"],
+        "timestamp":   timestamp,
+    })
+
+    return {
+        "filename":    file.filename,
+        "total_flows": len(flows),
+        "attack_count": attack_count,
+        "benign_count": len(flows) - attack_count,
+        "results":     results,
+    }
+
 
 # --------------------------------------------------
 # WebSocket Threat Endpoint
@@ -949,8 +1058,320 @@ def get_dashboard_traffic(current_user: dict = Depends(get_current_user)):
     return timeseries
 
 
+# --------------------------------------------------
+# Windows Firewall Management Endpoints
+# --------------------------------------------------
+import subprocess as _sp
+import ctypes
+import sys as _sys
+
+def _is_admin() -> bool:
+    """Check if the current process has administrator privileges."""
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin() != 0
+    except Exception:
+        return False
+
+def _run_netsh(cmd: str) -> dict:
+    """Run a netsh command and return output + success status."""
+    try:
+        result = _sp.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        return {
+            "success": result.returncode == 0,
+            "stdout": result.stdout.strip(),
+            "stderr": result.stderr.strip(),
+        }
+    except _sp.TimeoutExpired:
+        return {"success": False, "stdout": "", "stderr": "Command timed out"}
+    except Exception as e:
+        return {"success": False, "stdout": "", "stderr": str(e)}
+
+
+@app.get("/firewall/status")
+def get_firewall_status(current_user: dict = Depends(get_current_user)):
+    """Returns whether DefenXion is running with admin privileges and Windows Firewall status."""
+    admin = _is_admin()
+
+    # Query Windows Firewall profile state
+    fw_result = _run_netsh("netsh advfirewall show allprofiles state")
+    profiles = {}
+    for line in fw_result["stdout"].splitlines():
+        line = line.strip()
+        if "Domain Profile" in line:
+            profiles["domain"] = "on"
+        elif "Private Profile" in line:
+            profiles["private"] = "on"
+        elif "Public Profile" in line:
+            profiles["public"] = "on"
+        elif line.lower().startswith("state") and "on" in line.lower():
+            pass  # handled per section
+
+    # Count DefenXion-managed rules
+    dx_rules = _run_netsh('netsh advfirewall firewall show rule name="DefenXion_Block_*"')
+    dx_count = dx_rules["stdout"].count("Rule Name:")
+
+    return {
+        "admin_privileges": admin,
+        "firewall_available": fw_result["success"],
+        "windows_firewall_profiles": fw_result["stdout"],
+        "defenxion_rules_count": dx_count,
+        "can_manage": admin,
+    }
+
+
+class ManualBlockRequest(BaseModel):
+    ip: str
+    direction: str = "in"   # "in", "out", or "both"
+    note: str = ""
+
+
+@app.post("/firewall/block")
+def manual_block_ip(req: ManualBlockRequest, current_user: dict = Depends(get_current_user)):
+    """Manually block an IP address in Windows Firewall."""
+    import re
+    # Basic IP validation
+    if not re.match(r"^(\d{1,3}\.){3}\d{1,3}(/\d{1,2})?$", req.ip):
+        raise HTTPException(status_code=400, detail="Invalid IP address format")
+
+    if not _is_admin():
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator privileges required. Please restart the backend as Administrator."
+        )
+
+    rule_name = f"DefenXion_Block_{req.ip}"
+    results = []
+    directions = ["in", "out"] if req.direction == "both" else [req.direction]
+
+    for d in directions:
+        cmd = f'netsh advfirewall firewall add rule name="{rule_name}_{d}" dir={d} action=block remoteip={req.ip} enable=yes'
+        r = _run_netsh(cmd)
+        results.append({"direction": d, **r})
+
+    success = all(r["success"] for r in results)
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Mirror into MongoDB firewall rules collection
+    if success:
+        last = firewall_rules_collection.find_one(sort=[("rule_id", -1)])
+        next_id = (last["rule_id"] + 1) if last else 1
+        firewall_rules_collection.insert_one({
+            "rule_id": next_id,
+            "name": f"Manual Block {req.ip}",
+            "source_ip": req.ip,
+            "priority": "High",
+            "status": "Active",
+            "hits": 0,
+            "action": "DROP",
+            "direction": req.direction,
+            "note": req.note,
+            "managed_by": "windows_firewall",
+            "created": timestamp,
+            "triggered_by": current_user["username"],
+        })
+        logs_collection.insert_one({
+            "event_type": "MANUAL_BLOCK",
+            "source_ip": req.ip,
+            "direction": req.direction,
+            "triggered_by": current_user["username"],
+            "timestamp": timestamp,
+        })
+
+    return {
+        "ip": req.ip,
+        "success": success,
+        "details": results,
+        "message": f"IP {req.ip} blocked in Windows Firewall." if success else "Block failed — ensure backend runs as Administrator.",
+    }
+
+
+@app.delete("/firewall/block/{ip:path}")
+def unblock_ip(ip: str, current_user: dict = Depends(get_current_user)):
+    """Remove a DefenXion-managed Windows Firewall block for an IP."""
+    if not _is_admin():
+        raise HTTPException(
+            status_code=403,
+            detail="Administrator privileges required to remove firewall rules."
+        )
+
+    ip = ip.replace("/", "_")   # CIDR-safe
+    results = []
+    for suffix in [f"DefenXion_Block_{ip}", f"DefenXion_Block_{ip}_in", f"DefenXion_Block_{ip}_out"]:
+        cmd = f'netsh advfirewall firewall delete rule name="{suffix}"'
+        r = _run_netsh(cmd)
+        results.append({"rule": suffix, **r})
+
+    # Remove from MongoDB
+    firewall_rules_collection.update_many(
+        {"source_ip": ip, "managed_by": "windows_firewall"},
+        {"$set": {"status": "Removed"}}
+    )
+    logs_collection.insert_one({
+        "event_type": "MANUAL_UNBLOCK",
+        "source_ip": ip,
+        "triggered_by": current_user["username"],
+        "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    })
+
+    return {
+        "ip": ip,
+        "success": any(r["success"] for r in results),
+        "details": results,
+        "message": f"Unblock rules removed for {ip}",
+    }
+
+
+@app.get("/firewall/os-rules")
+def get_os_firewall_rules(current_user: dict = Depends(get_current_user)):
+    """Lists all DefenXion-managed rules currently installed in Windows Firewall."""
+    if not _is_admin():
+        return {"admin_privileges": False, "rules": [], "message": "Run backend as Administrator to see OS rules."}
+
+    result = _run_netsh('netsh advfirewall firewall show rule name="DefenXion_Block_*" verbose')
+    rules = []
+    current: dict = {}
+    for line in result["stdout"].splitlines():
+        line = line.strip()
+        if line.startswith("Rule Name:"):
+            if current:
+                rules.append(current)
+            current = {"name": line.split(":", 1)[1].strip()}
+        elif line.startswith("Direction:") and current:
+            current["direction"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Action:") and current:
+            current["action"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Enabled:") and current:
+            current["enabled"] = line.split(":", 1)[1].strip()
+        elif line.startswith("RemoteIP:") and current:
+            current["remoteip"] = line.split(":", 1)[1].strip()
+    if current:
+        rules.append(current)
+
+    return {"admin_privileges": True, "rules": rules, "count": len(rules)}
+
+
+# --------------------------------------------------
+# Network Graph Visualization Endpoint
+# --------------------------------------------------
+@app.get("/dashboard/analytics/network-graph")
+def get_network_graph(current_user: dict = Depends(get_current_user)):
+    """
+    Returns nodes + directed links for the force-directed network graph.
+    Builds the graph from the last 500 detections so recent events dominate.
+    """
+    from datetime import timedelta
+    ATTACK_ACTIONS = ["BLOCK_IP", "CRITICAL_BLOCK", "ALERT_ADMIN"]
+    BLOCK_ACTIONS  = ["BLOCK_IP", "CRITICAL_BLOCK"]
+
+    recent = list(
+        detections_collection.find({}, {"_id": 0})
+        .sort("_id", -1)
+        .limit(500)
+    )
+
+    severity_map = {
+        "CRITICAL_BLOCK": "Critical",
+        "BLOCK_IP": "High",
+        "ALERT_ADMIN": "Medium",
+        "LOG_ONLY": "Low",
+    }
+    color_map = {
+        "Critical": "#FF4D4D",
+        "High":     "#FFA657",
+        "Medium":   "#E3B341",
+        "Low":      "#58A6FF",
+        "Benign":   "#3FB950",
+        "Target":   "#58A6FF",
+        "Gateway":  "#BC8CFF",
+    }
+
+    nodes: dict = {}
+    links: list = []
+    link_set: set = set()
+    ip_attack_count: dict = {}
+
+    for det in recent:
+        src = det.get("source_ip")
+        dst = det.get("destination_ip")
+        if not src:
+            continue
+
+        action = det.get("action", "LOG_ONLY")
+        sev    = severity_map.get(action, "Low")
+        is_attack = action in ATTACK_ACTIONS
+        atype  = det.get("attack_type", "Unknown")
+        conf   = round(det.get("confidence", 0.5) * 100, 1)
+
+        # Track attack count per IP for node sizing
+        ip_attack_count[src] = ip_attack_count.get(src, 0) + 1
+
+        # Source node
+        if src not in nodes:
+            nodes[src] = {
+                "id":       src,
+                "label":    src,
+                "type":     "attacker" if is_attack else "benign",
+                "severity": sev if is_attack else "Benign",
+                "color":    color_map[sev] if is_attack else color_map["Benign"],
+                "attacks":  0,
+                "attack_types": set(),
+            }
+        if is_attack:
+            nodes[src]["attacks"] += 1
+            nodes[src]["attack_types"].add(atype)
+            nodes[src]["type"] = "attacker"
+            nodes[src]["severity"] = sev
+            nodes[src]["color"] = color_map[sev]
+
+        # Destination node (our servers)
+        if dst and dst not in nodes:
+            nodes[dst] = {
+                "id":       dst,
+                "label":    dst,
+                "type":     "target",
+                "severity": "Target",
+                "color":    color_map["Target"],
+                "attacks":  0,
+                "attack_types": set(),
+            }
+
+        # Link
+        if dst:
+            link_key = f"{src}→{dst}"
+            if link_key not in link_set:
+                link_set.add(link_key)
+                links.append({
+                    "source":    src,
+                    "target":    dst,
+                    "severity":  sev,
+                    "color":     color_map[sev] if is_attack else color_map["Benign"],
+                    "attack_type": atype,
+                    "confidence": conf,
+                    "is_attack": is_attack,
+                })
+
+    # Compute node sizes based on attack count
+    max_attacks = max((n["attacks"] for n in nodes.values()), default=1)
+    serialised_nodes = []
+    for n in nodes.values():
+        n["attack_types"] = list(n["attack_types"])
+        n["size"] = 4 + round((n["attacks"] / max(max_attacks, 1)) * 16)
+        serialised_nodes.append(n)
+
+    return {
+        "nodes": serialised_nodes,
+        "links": links,
+        "stats": {
+            "total_nodes":   len(nodes),
+            "total_links":   len(links),
+            "attack_nodes":  sum(1 for n in nodes.values() if n["type"] == "attacker"),
+            "target_nodes":  sum(1 for n in nodes.values() if n["type"] == "target"),
+        }
+    }
+
 
 @app.get("/dashboard/analytics/port-breakdown")
+
 def get_port_breakdown(current_user: dict = Depends(get_current_user)):
     """Returns top destination ports from live capture data."""
     pipeline = [
@@ -1438,6 +1859,270 @@ def reset_user_password(
     refresh_tokens_collection.delete_many({"username": username})
 
     return {"message": f"Password for {username} has been reset successfully"}
+
+
+# --------------------------------------------------
+# Forgot Password – Admin-Approval Workflow
+# --------------------------------------------------
+from backend.database import password_reset_requests_collection
+import secrets
+import string
+
+class ForgotPasswordRequest(BaseModel):
+    username: str
+    reason: str = ""
+
+# Rate limit forgot-password requests per IP (max 3 per hour)
+_forgot_pw_tracker: dict = {}
+
+def _send_reset_notification_email(to_email: str, username: str, status: str, temp_password: str = "", reject_reason: str = "") -> tuple[bool, str]:
+    """Send SMTP notification email on approve/reject. Returns (success, error_msg)."""
+    try:
+        smtp_cfg = app_settings_collection.find_one({}, {"smtp": 1, "_id": 0})
+        smtp = (smtp_cfg or {}).get("smtp", {})
+        host = smtp.get("host", "").strip()
+        port = int(smtp.get("port", 587) or 587)
+        username_smtp = smtp.get("username", "").strip()
+        password_smtp = smtp.get("password", "").strip()
+
+        if not (host and username_smtp and password_smtp):
+            return False, "SMTP not configured"
+
+        import smtplib
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+
+        msg = MIMEMultipart("alternative")
+        msg["From"] = username_smtp
+        msg["To"] = to_email
+
+        if status == "approved":
+            msg["Subject"] = "DefenXion – Your Password Reset Request Has Been Approved"
+            html_body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;background:#0D1117;color:#E6EDF3;border-radius:12px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#1F6FEB,#2ea043);padding:28px 32px;">
+                <h1 style="margin:0;font-size:22px;color:white;">Password Reset Approved ✅</h1>
+                <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Your access has been restored by an administrator.</p>
+              </div>
+              <div style="padding:28px 32px;">
+                <p style="color:#7D8590;font-size:14px;margin-top:0;">Use the temporary password below to log in. You will be required to set a new password immediately.</p>
+                <div style="background:#161B22;border:1px solid #21262D;border-radius:8px;padding:16px 20px;margin:16px 0;">
+                  <table style="width:100%;border-collapse:collapse;">
+                    <tr><td style="color:#7D8590;font-size:12px;padding:6px 0;">Username</td><td style="color:#58A6FF;font-size:14px;font-weight:600;font-family:monospace;">{username}</td></tr>
+                    <tr><td style="color:#7D8590;font-size:12px;padding:6px 0;">Temp Password</td><td style="color:#3FB950;font-size:14px;font-weight:600;font-family:monospace;">{temp_password}</td></tr>
+                  </table>
+                </div>
+                <p style="color:#FF4D4D;font-size:12px;background:rgba(255,77,77,0.08);border:1px solid rgba(255,77,77,0.2);border-radius:6px;padding:10px 14px;">⚠️ This password is temporary and must be changed on first login.</p>
+                <p style="color:#484F58;font-size:11px;margin-top:24px;">This email was sent by the DefenXion Security Platform.</p>
+              </div>
+            </div>
+            """
+        else:
+            msg["Subject"] = "DefenXion – Your Password Reset Request Has Been Reviewed"
+            html_body = f"""
+            <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;background:#0D1117;color:#E6EDF3;border-radius:12px;overflow:hidden;">
+              <div style="background:linear-gradient(135deg,#FF4D4D,#d73a49);padding:28px 32px;">
+                <h1 style="margin:0;font-size:22px;color:white;">Password Reset Request Reviewed</h1>
+                <p style="margin:8px 0 0;color:rgba(255,255,255,0.85);font-size:14px;">Unfortunately your request could not be approved at this time.</p>
+              </div>
+              <div style="padding:28px 32px;">
+                <p style="color:#7D8590;font-size:14px;margin-top:0;">Username: <strong style="color:#E6EDF3;">{username}</strong></p>
+                {"<p style='color:#7D8590;font-size:13px;'>Reason: <span style='color:#E6EDF3;'>" + reject_reason + "</span></p>" if reject_reason else ""}
+                <p style="color:#7D8590;font-size:13px;">Please contact your administrator directly if you believe this is an error.</p>
+                <p style="color:#484F58;font-size:11px;margin-top:24px;">This email was sent by the DefenXion Security Platform.</p>
+              </div>
+            </div>
+            """
+
+        msg.attach(MIMEText(html_body, "html"))
+        with smtplib.SMTP(host, port, timeout=10) as server:
+            server.ehlo()
+            server.starttls()
+            server.login(username_smtp, password_smtp)
+            server.sendmail(username_smtp, to_email, msg.as_string())
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+@app.post("/auth/forgot-password")
+def submit_forgot_password(request: Request, data: ForgotPasswordRequest):
+    """Public endpoint – no auth required. User submits a reset request."""
+    from time import time as _time
+    ip = request.client.host
+    now = _time()
+
+    # Rate limit: max 3 requests per hour per IP
+    _forgot_pw_tracker[ip] = [t for t in _forgot_pw_tracker.get(ip, []) if now - t < 3600]
+    if len(_forgot_pw_tracker[ip]) >= 3:
+        raise HTTPException(status_code=429, detail="Too many requests. Please wait before trying again.")
+    _forgot_pw_tracker[ip].append(now)
+
+    # Validate that the username exists (but don't reveal details if not)
+    user = users_collection.find_one({"username": data.username.strip()})
+    if not user:
+        # Return success anyway to avoid username enumeration
+        return {"message": "If this account exists, your request has been submitted."}
+
+    # Prevent duplicate pending requests
+    existing = password_reset_requests_collection.find_one({
+        "username": data.username.strip(),
+        "status": "pending"
+    })
+    if existing:
+        return {"message": "A request is already pending for this account. Please wait for admin review."}
+
+    password_reset_requests_collection.insert_one({
+        "username": data.username.strip(),
+        "email": user.get("email", ""),
+        "reason": data.reason.strip()[:500],
+        "status": "pending",
+        "requested_at": datetime.utcnow(),
+        "reviewed_at": None,
+        "reviewed_by": None,
+        "reject_reason": "",
+        "request_ip": ip,
+    })
+
+    return {"message": "Your request has been submitted. The admin will review it shortly."}
+
+
+@app.get("/auth/forgot-password/requests")
+def list_reset_requests(admin: dict = Depends(require_admin)):
+    """Admin-only: list all password reset requests, newest first."""
+    requests_list = list(
+        password_reset_requests_collection.find({})
+        .sort("requested_at", -1)
+        .limit(200)
+    )
+    result = []
+    for r in requests_list:
+        r["id"] = str(r.pop("_id"))
+        if isinstance(r.get("requested_at"), datetime):
+            r["requested_at"] = r["requested_at"].strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(r.get("reviewed_at"), datetime):
+            r["reviewed_at"] = r["reviewed_at"].strftime("%Y-%m-%d %H:%M:%S")
+        result.append(r)
+    return result
+
+
+@app.post("/auth/forgot-password/requests/{request_id}/approve")
+def approve_reset_request(request_id: str, admin: dict = Depends(require_admin)):
+    """Admin-only: approve a password reset request and generate a one-time temp password."""
+    from bson import ObjectId
+    try:
+        oid = ObjectId(request_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request ID")
+
+    req = password_reset_requests_collection.find_one({"_id": oid})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Request is already {req['status']}")
+
+    user = users_collection.find_one({"username": req["username"]})
+    if not user:
+        raise HTTPException(status_code=404, detail="User no longer exists")
+
+    # Generate a secure 16-char temporary password
+    alphabet = string.ascii_letters + string.digits + "!@#$%"
+    temp_password = "".join(secrets.choice(alphabet) for _ in range(16))
+
+    # Hash and save to user, set must_change_password flag
+    users_collection.update_one(
+        {"username": req["username"]},
+        {"$set": {
+            "hashed_password": hash_password(temp_password),
+            "must_change_password": True,
+            "account_locked": False,
+            "failed_attempts": 0,
+        }}
+    )
+
+    # Invalidate all existing refresh tokens for security
+    from backend.database import refresh_tokens_collection
+    refresh_tokens_collection.delete_many({"username": req["username"]})
+
+    # Mark request as approved
+    password_reset_requests_collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            "status": "approved",
+            "reviewed_at": datetime.utcnow(),
+            "reviewed_by": admin["username"],
+        }}
+    )
+
+    # Send SMTP notification if configured
+    email_sent = False
+    if user.get("email"):
+        email_sent, _ = _send_reset_notification_email(
+            to_email=user["email"],
+            username=req["username"],
+            status="approved",
+            temp_password=temp_password,
+        )
+
+    return {
+        "message": f"Request approved. Temp password generated for {req['username']}.",
+        "temp_password": temp_password,
+        "email_sent": email_sent,
+    }
+
+
+@app.post("/auth/forgot-password/requests/{request_id}/reject")
+def reject_reset_request(request_id: str, body: dict, admin: dict = Depends(require_admin)):
+    """Admin-only: reject a password reset request."""
+    from bson import ObjectId
+    try:
+        oid = ObjectId(request_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request ID")
+
+    req = password_reset_requests_collection.find_one({"_id": oid})
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+    if req["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Request is already {req['status']}")
+
+    reject_reason = body.get("reason", "").strip()[:300]
+    password_reset_requests_collection.update_one(
+        {"_id": oid},
+        {"$set": {
+            "status": "rejected",
+            "reviewed_at": datetime.utcnow(),
+            "reviewed_by": admin["username"],
+            "reject_reason": reject_reason,
+        }}
+    )
+
+    # Send SMTP notification if configured
+    user = users_collection.find_one({"username": req["username"]})
+    if user and user.get("email"):
+        _send_reset_notification_email(
+            to_email=user["email"],
+            username=req["username"],
+            status="rejected",
+            reject_reason=reject_reason,
+        )
+
+    return {"message": f"Request rejected for {req['username']}."}
+
+
+@app.delete("/auth/forgot-password/requests/{request_id}")
+def dismiss_reset_request(request_id: str, admin: dict = Depends(require_admin)):
+    """Admin-only: delete/dismiss a reviewed request from the list."""
+    from bson import ObjectId
+    try:
+        oid = ObjectId(request_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request ID")
+
+    result = password_reset_requests_collection.delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return {"message": "Request dismissed."}
 
 
 # --------------------------------------------------

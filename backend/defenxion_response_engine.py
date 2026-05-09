@@ -178,16 +178,30 @@ def alert_admin(event: dict):
     dispatch_notifications(event, "MEDIUM")
 
 
+import subprocess
+
 def block_ip(ip: str):
-    print(f"[BLOCK] IP {ip} blocked (simulated firewall rule)")
+    print(f"[BLOCK] IP {ip} blocked (Actual Windows Firewall rule)")
     _add_auto_firewall_rule(ip, "High")
+    _execute_windows_firewall_block(ip)
 
 
 def critical_response(event: dict):
     ip = event['source_ip']
-    print(f"[CRITICAL] IP {ip} blocked and escalated to SOC (simulated)")
+    print(f"[CRITICAL] IP {ip} blocked and escalated to SOC (Actual)")
     _add_auto_firewall_rule(ip, "Critical")
+    _execute_windows_firewall_block(ip)
     dispatch_notifications(event, "CRITICAL")
+
+def _execute_windows_firewall_block(ip: str):
+    try:
+        rule_name = f"DefenXion_Block_{ip}"
+        # We use netsh to add a Windows firewall rule
+        cmd = f'netsh advfirewall firewall add rule name="{rule_name}" dir=in action=block remoteip={ip}'
+        subprocess.run(cmd, shell=True, check=True, capture_output=True)
+        print(f"[FIREWALL] Successfully executed OS firewall block for {ip}")
+    except Exception as e:
+        print(f"[FIREWALL] Failed to execute OS block for {ip}: {e}")
 
 
 def _add_auto_firewall_rule(ip: str, priority: str):
@@ -256,6 +270,7 @@ def handle_event(event: dict):
         "destination_ip": event["destination_ip"],
         "prediction": event["prediction"],
         "confidence": event["confidence"],
+        "explanations": event.get("explanations", []),
         "action": action,
         "timestamp": event["timestamp"],
     })
@@ -281,6 +296,7 @@ def handle_event(event: dict):
             "action": action,
             "status": "ACTIVE",
             "timestamp": event["timestamp"],
+            "explanations": event.get("explanations", []),
         })
 
     # -----------------------------
