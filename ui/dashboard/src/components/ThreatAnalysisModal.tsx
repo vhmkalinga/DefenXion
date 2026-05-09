@@ -4,6 +4,8 @@ import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Progress } from './ui/progress';
+import { downloadCSV } from '../utils/export';
+import { toast } from 'sonner';
 
 interface ThreatAnalysisModalProps {
   threat: {
@@ -16,6 +18,7 @@ interface ThreatAnalysisModalProps {
     confidence: number;
     status: string;
     details: string;
+    explanations?: { feature: string; importance: number; value: number }[];
   };
   onClose: () => void;
 }
@@ -38,7 +41,7 @@ const remediationSteps = [
   {
     step: 3,
     title: 'Threat Containment',
-    description: 'Apply firewall rules to block malicious IP addresses',
+    description: 'Actual Windows OS Firewall rules applied to block malicious IP',
     status: 'completed',
     icon: CheckCircle,
   },
@@ -175,11 +178,32 @@ export function ThreatAnalysisModal({ threat, onClose }: ThreatAnalysisModalProp
                     <Server className="w-5 h-5 text-[#58A6FF]" />
                     <div>
                       <div className="text-[#7D8590] text-xs">Target Port</div>
-                      <div className="text-[#E6EDF3] font-mono">{threat.targetPort}</div>
+                      <div className="text-[#E6EDF3] font-mono">{threat.targetPort || 'Unknown'}</div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {threat.explanations && threat.explanations.length > 0 && (
+                <div className="bg-[#0D1117] rounded-xl p-5 border border-[#30363D] mt-4">
+                  <h3 className="text-[#E6EDF3] mb-4 flex items-center gap-2">
+                    <Zap className="w-5 h-5 text-[#58A6FF]" />
+                    Explainable AI (XAI) Insight
+                  </h3>
+                  <div className="space-y-3">
+                    {threat.explanations.map((exp, idx) => (
+                      <div key={idx}>
+                        <div className="flex justify-between mb-1">
+                          <span className="text-[#C9D1D9] text-sm font-mono">{exp.feature}</span>
+                          <span className="text-[#58A6FF] text-sm">{exp.importance}% Impact</span>
+                        </div>
+                        <Progress value={exp.importance} className="h-1.5 bg-[#30363D]" />
+                        <div className="text-[#7D8590] text-xs mt-1 text-right">Raw Value: {exp.value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="bg-[#0D1117] rounded-xl p-5 border border-[#30363D]">
                 <h3 className="text-[#E6EDF3] mb-4">Risk Assessment</h3>
@@ -355,10 +379,23 @@ username=admin' OR '1'='1&password=test`}
             Detected at {threat.timestamp}
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" className="border-[#30363D] text-[#E6EDF3]">
+            <Button 
+              variant="outline" 
+              className="border-[#30363D] text-[#E6EDF3]"
+              onClick={() => {
+                downloadCSV([threat], `threat-report-${threat.id || 'export'}.csv`);
+                toast.success('Downloaded threat report');
+              }}
+            >
               Download Report
             </Button>
-            <Button className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90">
+            <Button 
+              className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90"
+              onClick={() => {
+                toast.success('Threat marked as resolved');
+                onClose();
+              }}
+            >
               Mark as Resolved
             </Button>
           </div>

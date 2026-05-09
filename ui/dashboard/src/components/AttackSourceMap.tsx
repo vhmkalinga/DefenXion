@@ -25,18 +25,42 @@ function AttackSourceMap() {
 
     // Fetch data
     useEffect(() => {
-        const token = localStorage.getItem("access_token");
-        if (!token) return;
+        let intervalId: ReturnType<typeof setInterval> | null = null;
+        let isUnmounted = false;
 
         const fetchSources = () => {
+            // Check token freshness on every tick — don't fire if logged out
+            const token = localStorage.getItem("access_token");
+            if (!token) {
+                if (intervalId) clearInterval(intervalId);
+                return;
+            }
+
             getGlobalSources()
-                .then(data => { if (data && data.length > 0) setSources(data); })
-                .catch(err => console.error("Failed to fetch global sources", err));
+                .then(data => {
+                    if (!isUnmounted && data && data.length > 0) setSources(data);
+                })
+                .catch(err => {
+                    const status = (err as any)?.response?.status;
+                    if (status === 401 || status === 403) {
+                        // Token expired — stop spamming, let the global interceptor handle redirect
+                        if (intervalId) clearInterval(intervalId);
+                    } else {
+                        console.error("Failed to fetch global sources", err);
+                    }
+                });
         };
 
-        fetchSources();
-        const interval = setInterval(fetchSources, 5000);
-        return () => clearInterval(interval);
+        // Only start if we have a token right now
+        if (localStorage.getItem("access_token")) {
+            fetchSources();
+            intervalId = setInterval(fetchSources, 5000);
+        }
+
+        return () => {
+            isUnmounted = true;
+            if (intervalId) clearInterval(intervalId);
+        };
     }, []);
 
     // Animate pulse rings

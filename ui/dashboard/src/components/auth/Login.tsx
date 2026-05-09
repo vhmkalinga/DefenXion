@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Shield, Lock, Eye, EyeOff, User, AlertCircle, Loader2, Wifi, WifiOff, KeyRound } from "lucide-react";
+import { Shield, Lock, Eye, EyeOff, User, AlertCircle, Loader2, Wifi, WifiOff, KeyRound, ArrowLeft, CheckCircle, RefreshCw } from "lucide-react";
 import axios from "axios";
-import { login2FA } from "../../services/api";
+import { login2FA, submitForgotPassword, forcedChangePassword } from "../../services/api";
 import { InputOTP, InputOTPGroup, InputOTPSlot, InputOTPSeparator } from "../ui/input-otp";
 
 interface LoginProps {
@@ -161,9 +161,20 @@ export function Login({ onLogin }: LoginProps) {
   const [shake, setShake] = useState(false);
   const [backendOnline, setBackendOnline] = useState<boolean | null>(null);
 
-  const [step, setStep] = useState<"credentials" | "2fa">("credentials");
+  const [step, setStep] = useState<"credentials" | "2fa" | "forgot" | "forgot-success" | "force-change">("credentials");
   const [tempToken, setTempToken] = useState("");
   const [otpCode, setOtpCode] = useState("");
+
+  // Forgot password state
+  const [forgotUsername, setForgotUsername] = useState("");
+  const [forgotReason, setForgotReason] = useState("");
+  const [isForgotLoading, setIsForgotLoading] = useState(false);
+
+  // Force change password state
+  const [forceNewPassword, setForceNewPassword] = useState("");
+  const [forceConfirmPassword, setForceConfirmPassword] = useState("");
+  const [showForceNew, setShowForceNew] = useState(false);
+  const [isForceChanging, setIsForceChanging] = useState(false);
 
   // Check backend connectivity once
   useEffect(() => {
@@ -199,6 +210,11 @@ export function Login({ onLogin }: LoginProps) {
       localStorage.setItem("refresh_token", response.data.refresh_token);
 
       setIsLoading(false);
+
+      if (response.data.must_change_password) {
+        setStep("force-change");
+        return;
+      }
       onLogin();
     } catch (err: any) {
       setIsLoading(false);
@@ -228,6 +244,10 @@ export function Login({ onLogin }: LoginProps) {
       localStorage.setItem("access_token", response.access_token);
       localStorage.setItem("refresh_token", response.refresh_token);
       setIsLoading(false);
+      if (response.must_change_password) {
+        setStep("force-change");
+        return;
+      }
       onLogin();
     } catch (err: any) {
       setIsLoading(false);
@@ -537,7 +557,11 @@ export function Login({ onLogin }: LoginProps) {
                       </label>
                       <button
                         type="button"
-                        onClick={() => alert("Contact your system administrator to reset your password.")}
+                        onClick={() => {
+                          setStep("forgot");
+                          setForgotUsername(username);
+                          setError("");
+                        }}
                         style={{
                           background: "none", border: "none", cursor: "pointer",
                           color: "#58A6FF", fontSize: 13, fontFamily: "inherit",
@@ -596,7 +620,7 @@ export function Login({ onLogin }: LoginProps) {
                       }
                     </button>
                   </>
-                ) : (
+                ) : step === "2fa" ? (
                   <>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16 }}>
                       <div style={{ color: "#E6EDF3", fontSize: 15, fontWeight: 500 }}>Two-Factor Authentication</div>
@@ -653,7 +677,175 @@ export function Login({ onLogin }: LoginProps) {
                       </button>
                     </div>
                   </>
-                )}
+                ) : step === "forgot" ? (
+                  <>
+                    {/* Back button row */}
+                    <button
+                      type="button"
+                      onClick={() => { setStep("credentials"); setError(""); setForgotReason(""); }}
+                      style={{ display: "flex", alignItems: "center", gap: 5, background: "none", border: "none", color: "#7D8590", cursor: "pointer", fontSize: 13, marginBottom: 16, padding: 0 }}
+                    >
+                      <ArrowLeft size={14} /> Back to login
+                    </button>
+                    <div style={{ textAlign: "center", marginBottom: 20 }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 14, background: "rgba(255,166,87,0.12)", border: "1px solid rgba(255,166,87,0.25)", marginBottom: 12 }}>
+                        <RefreshCw size={22} color="#FFA657" />
+                      </div>
+                      <div style={{ color: "#E6EDF3", fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Request Password Reset</div>
+                      <p style={{ color: "#7D8590", fontSize: 13 }}>Submit a request and the admin will review it.</p>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      <div>
+                        <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>Username</label>
+                        <div style={{ position: "relative" }}>
+                          <User size={15} color="#7D8590" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }} />
+                          <input
+                            id="forgot-username"
+                            type="text"
+                            placeholder="Your username"
+                            value={forgotUsername}
+                            onChange={(e) => setForgotUsername(e.target.value)}
+                            style={{ width: "100%", background: "rgba(13,17,23,0.8)", border: "1px solid rgba(48,54,61,0.8)", borderRadius: 10, padding: "12px 12px 12px 40px", color: "#E6EDF3", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>Reason <span style={{ color: "#7D8590", fontWeight: 400 }}>(optional)</span></label>
+                        <textarea
+                          id="forgot-reason"
+                          placeholder="Brief description of why you need a reset..."
+                          value={forgotReason}
+                          onChange={(e) => setForgotReason(e.target.value)}
+                          rows={3}
+                          style={{ width: "100%", background: "rgba(13,17,23,0.8)", border: "1px solid rgba(48,54,61,0.8)", borderRadius: 10, padding: "10px 12px", color: "#E6EDF3", fontSize: 13, outline: "none", fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isForgotLoading || !forgotUsername.trim()}
+                        onClick={async () => {
+                          setIsForgotLoading(true);
+                          setError("");
+                          try {
+                            await submitForgotPassword(forgotUsername.trim(), forgotReason.trim());
+                            setStep("forgot-success");
+                          } catch (err: any) {
+                            setError(err?.response?.data?.detail || "Failed to submit request. Please try again.");
+                          } finally {
+                            setIsForgotLoading(false);
+                          }
+                        }}
+                        style={{
+                          width: "100%", padding: "13px", borderRadius: 10, border: "none",
+                          cursor: isForgotLoading || !forgotUsername.trim() ? "not-allowed" : "pointer",
+                          background: isForgotLoading || !forgotUsername.trim()
+                            ? "rgba(255,166,87,0.25)"
+                            : "linear-gradient(135deg, #FFA657 0%, #f0883e 100%)",
+                          color: "white", fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          transition: "all 0.2s ease",
+                        }}
+                      >
+                        {isForgotLoading ? <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> : <RefreshCw size={16} />}
+                        Submit Reset Request
+                      </button>
+                    </div>
+                  </>
+                ) : step === "forgot-success" ? (
+                  <>
+                    <div style={{ textAlign: "center", padding: "16px 0" }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 64, height: 64, borderRadius: 18, background: "rgba(63,185,80,0.12)", border: "1px solid rgba(63,185,80,0.3)", marginBottom: 16 }}>
+                        <CheckCircle size={28} color="#3FB950" />
+                      </div>
+                      <div style={{ color: "#E6EDF3", fontSize: 17, fontWeight: 700, marginBottom: 8 }}>Request Submitted!</div>
+                      <p style={{ color: "#7D8590", fontSize: 13, lineHeight: 1.6, marginBottom: 24 }}>
+                        Your password reset request has been sent to the administrator.
+                        You'll be notified once it's reviewed. Contact your admin directly if urgent.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { setStep("credentials"); setForgotReason(""); setError(""); }}
+                        style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", padding: "12px", borderRadius: 10, border: "1px solid rgba(48,54,61,0.8)", background: "transparent", color: "#E6EDF3", fontSize: 14, fontWeight: 600, fontFamily: "inherit", cursor: "pointer" }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <ArrowLeft size={14} /> Back to Login
+                      </button>
+                    </div>
+                  </>
+                ) : step === "force-change" ? (
+                  <>
+                    <div style={{ textAlign: "center", marginBottom: 20 }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 52, height: 52, borderRadius: 14, background: "rgba(255,77,77,0.1)", border: "1px solid rgba(255,77,77,0.25)", marginBottom: 12 }}>
+                        <Lock size={22} color="#FF4D4D" />
+                      </div>
+                      <div style={{ color: "#E6EDF3", fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Set a New Password</div>
+                      <p style={{ color: "#7D8590", fontSize: 13 }}>Your temporary password must be changed before continuing.</p>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                      <div>
+                        <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>New Password</label>
+                        <div style={{ position: "relative" }}>
+                          <Lock size={15} color="#7D8590" style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)" }} />
+                          <input
+                            id="force-new-password"
+                            type={showForceNew ? "text" : "password"}
+                            placeholder="Min 8 characters"
+                            value={forceNewPassword}
+                            onChange={(e) => setForceNewPassword(e.target.value)}
+                            style={{ width: "100%", background: "rgba(13,17,23,0.8)", border: "1px solid rgba(48,54,61,0.8)", borderRadius: 10, padding: "12px 44px 12px 40px", color: "#E6EDF3", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                          />
+                          <button type="button" onClick={() => setShowForceNew(!showForceNew)} style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "#7D8590" }}>
+                            {showForceNew ? <EyeOff size={15} /> : <Eye size={15} />}
+                          </button>
+                        </div>
+                        {forceNewPassword && forceNewPassword.length < 8 && <div style={{ color: "#FF4D4D", fontSize: 11, marginTop: 4 }}>Minimum 8 characters</div>}
+                      </div>
+                      <div>
+                        <label style={{ display: "block", color: "#C9D1D9", fontSize: 13, fontWeight: 500, marginBottom: 7 }}>Confirm Password</label>
+                        <input
+                          id="force-confirm-password"
+                          type="password"
+                          placeholder="Re-enter new password"
+                          value={forceConfirmPassword}
+                          onChange={(e) => setForceConfirmPassword(e.target.value)}
+                          style={{ width: "100%", background: "rgba(13,17,23,0.8)", border: "1px solid rgba(48,54,61,0.8)", borderRadius: 10, padding: "12px 12px", color: "#E6EDF3", fontSize: 14, outline: "none", fontFamily: "inherit", boxSizing: "border-box" }}
+                        />
+                        {forceConfirmPassword && forceNewPassword !== forceConfirmPassword && <div style={{ color: "#FF4D4D", fontSize: 11, marginTop: 4 }}>Passwords do not match</div>}
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isForceChanging || forceNewPassword.length < 8 || forceNewPassword !== forceConfirmPassword}
+                        onClick={async () => {
+                          setIsForceChanging(true);
+                          setError("");
+                          try {
+                            await forcedChangePassword(forceNewPassword);
+                            onLogin();
+                          } catch (err: any) {
+                            setError(err?.response?.data?.detail || "Failed to update password. Please try again.");
+                          } finally {
+                            setIsForceChanging(false);
+                          }
+                        }}
+                        style={{
+                          width: "100%", padding: "13px", borderRadius: 10, border: "none", marginTop: 4,
+                          cursor: isForceChanging || forceNewPassword.length < 8 || forceNewPassword !== forceConfirmPassword ? "not-allowed" : "pointer",
+                          background: isForceChanging || forceNewPassword.length < 8 || forceNewPassword !== forceConfirmPassword
+                            ? "rgba(63,185,80,0.3)"
+                            : "linear-gradient(135deg, #3FB950 0%, #2ea043 100%)",
+                          color: "white", fontSize: 14, fontWeight: 600, fontFamily: "inherit",
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                          transition: "all 0.2s ease",
+                          boxShadow: !isForceChanging && forceNewPassword.length >= 8 && forceNewPassword === forceConfirmPassword ? "0 4px 20px rgba(63,185,80,0.35)" : "none",
+                        }}
+                      >
+                        {isForceChanging ? <Loader2 size={16} style={{ animation: "spin 0.8s linear infinite" }} /> : <CheckCircle size={16} />}
+                        Set Password & Continue
+                      </button>
+                    </div>
+                  </>
+                ) : null}
               </form>
             </div>
 
