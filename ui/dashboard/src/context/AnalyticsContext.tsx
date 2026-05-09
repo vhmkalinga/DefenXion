@@ -33,13 +33,26 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     isLoaded: false,
   });
 
-  const fetchAll = async () => {
+  const fetchAll = async (attempt = 0) => {
+    // Guard: don't fetch until the auth token is in localStorage
+    const token = localStorage.getItem('access_token');
+    if (!token) {
+      if (attempt < 8) setTimeout(() => fetchAll(attempt + 1), 400);
+      return;
+    }
+
     try {
       const [traffic, sources, ports] = await Promise.all([
-        getDashboardTraffic().catch(() => []),
-        getTopSources().catch(() => []),
-        getPortBreakdown().catch(() => []),
+        getDashboardTraffic().catch((e: any) => {
+          if (e?.response?.status === 401 && attempt < 3) { setTimeout(() => fetchAll(attempt + 1), 800); }
+          return null;
+        }),
+        getTopSources().catch(() => null),
+        getPortBreakdown().catch(() => null),
       ]);
+
+      // If every call returned null (all 401s on first try) don't clobber state
+      if (traffic === null && sources === null && ports === null) return;
 
       setData(prev => {
         const t = traffic && traffic.length > 0 ? traffic : prev.trafficHistory;
@@ -60,13 +73,13 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
         };
       });
     } catch (err) {
-      console.error('AnalyticsProvider fetch failed', err);
+      // Silent — individual endpoint errors are already caught above
     }
   };
 
   useEffect(() => {
-    fetchAll();                                        // initial fetch
-    const id = setInterval(fetchAll, 10_000);          // background refresh every 10s
+    fetchAll();                                        // initial fetch (with token guard)
+    const id = setInterval(() => fetchAll(), 10_000); // background refresh every 10s
     return () => clearInterval(id);
   }, []);
 
