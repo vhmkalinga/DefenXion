@@ -8,6 +8,7 @@ from pydantic import BaseModel
 import os
 import pyotp
 from dotenv import load_dotenv
+from bson import ObjectId
 
 from backend.database import (
     users_collection,
@@ -172,6 +173,8 @@ def login_user(
     refresh_tokens_collection.insert_one({
         "username": user["username"],
         "refresh_token": refresh_token,
+        "device_info": request.headers.get("user-agent", "Unknown Device"),
+        "ip": ip,
         "created_at": datetime.utcnow()
     })
 
@@ -191,7 +194,7 @@ class Login2FARequest(BaseModel):
     otp_code: str
 
 @router.post("/login/2fa")
-def login_2fa(data: Login2FARequest):
+def login_2fa(request: Request, data: Login2FARequest):
     try:
         payload = jwt.decode(data.temp_token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "2fa_temp":
@@ -224,6 +227,8 @@ def login_2fa(data: Login2FARequest):
     refresh_tokens_collection.insert_one({
         "username": user["username"],
         "refresh_token": refresh_token,
+        "device_info": request.headers.get("user-agent", "Unknown Device"),
+        "ip": request.client.host,
         "created_at": datetime.utcnow()
     })
 
@@ -306,6 +311,38 @@ def logout(
     })
 
     return {"message": "Logged out successfully"}
+
+
+# ==================================================
+# SESSION MANAGEMENT (ACTIVE DEVICES)
+# ==================================================
+@router.get("/sessions")
+def get_sessions(current_user: dict = Depends(get_current_user)):
+    sessions = refresh_tokens_collection.find({"username": current_user["username"]}, {"refresh_token": 0})
+    result = []
+    for s in sessions:
+        s["id"] = str(s["_id"])
+        del s["_id"]
+        result.append(s)
+    return {"sessions": result}
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: str, current_user: dict = Depends(get_current_user)):
+    try:
+        obj_id = ObjectId(session_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid session ID")
+
+    result = refresh_tokens_collection.delete_one({
+        "_id": obj_id,
+        "username": current_user["username"]
+    })
+
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return {"message": "Session revoked successfully"}
 
 
 # ==================================================
@@ -399,6 +436,18 @@ def get_me(current_user: dict = Depends(get_current_user)):
         "login_history": user.get("login_history", []),
         "member_since": user.get("created_at", datetime.utcnow().strftime("%B %Y")) if isinstance(user.get("created_at"), str) else (user.get("created_at").strftime("%B %Y") if user.get("created_at") else datetime.utcnow().strftime("%B %Y"))
     }
+
+
+class PushTokenRequest(BaseModel):
+    token: str | None
+
+@router.post("/push-token")
+def update_push_token(data: PushTokenRequest, current_user: dict = Depends(get_current_user)):
+    users_collection.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"push_token": data.token}}
+    )
+    return {"message": "Push token updated successfully"}
 
 
 class UpdateProfileRequest(BaseModel):
