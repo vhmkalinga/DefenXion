@@ -3,10 +3,13 @@ import React from 'react';
 import { Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Theme from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
+import { darkTheme } from '../../constants/theme';
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const ctx = useTheme();
+  const theme = ctx?.theme ?? darkTheme;
 
   // Dynamically account for Android gesture/button nav bar height
   const tabBarHeight = (Platform.OS === 'ios' ? 60 : 56) + insets.bottom;
@@ -15,11 +18,11 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: Theme.colors.primary,
-        tabBarInactiveTintColor: Theme.colors.textMuted,
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textMuted,
         tabBarStyle: {
-          backgroundColor: Theme.colors.surface,
-          borderTopColor: Theme.colors.border,
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.border,
           borderTopWidth: 1,
           height: tabBarHeight,
           paddingBottom: insets.bottom + 4,
@@ -33,7 +36,7 @@ export default function TabLayout() {
       }}>
 
       <Tabs.Screen
-        name="index"
+        name="dashboard"
         options={{
           title: 'Home',
           tabBarIcon: ({ color }) => <Ionicons name="home-outline" size={24} color={color} />,

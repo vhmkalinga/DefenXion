@@ -3,7 +3,8 @@ import { View, Text, StyleSheet, FlatList, ActivityIndicator, TouchableOpacity, 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Theme from '../../constants/theme';
+import { SharedStyles, darkTheme, Theme } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import { fetchRecentAlerts, createFirewallRule } from '../../constants/api';
 
 function timeAgo(ts: string) {
@@ -15,6 +16,10 @@ function timeAgo(ts: string) {
 }
 
 export default function ThreatsScreen() {
+  const ctx = useTheme();
+  const theme = ctx?.theme ?? darkTheme;
+  const styles = getStyles(theme);
+
   const [alerts, setAlerts]       = useState<any[]>([]);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -68,14 +73,14 @@ export default function ThreatsScreen() {
   const renderAlert = ({ item }: { item: any }) => {
     const isCritical = item.severity === 'Critical';
     const isHigh     = item.severity === 'High';
-    const color     = isCritical ? Theme.colors.danger : isHigh ? Theme.colors.warning : Theme.colors.primary;
-    const colorDim  = isCritical ? Theme.colors.dangerDim : isHigh ? Theme.colors.warningDim : Theme.colors.primaryDim;
+    const color     = isCritical ? theme.colors.danger : isHigh ? theme.colors.warning : theme.colors.primary;
+    const colorDim  = isCritical ? theme.colors.dangerDim : isHigh ? theme.colors.warningDim : theme.colors.primaryDim;
     const iconName  = isCritical ? 'alert-circle' : isHigh ? 'warning' : 'information-circle';
     const ip        = item.sourceIp || item.source_ip || 'Unknown';
     const conf      = item.confidence; // already 0-100 from backend
 
     return (
-      <View style={[styles.card, { borderColor: Theme.colors.border }]}>
+      <View style={[styles.card, { borderColor: theme.colors.border }]}>
         <View style={[styles.cardAccent, { backgroundColor: color }]} />
         <View style={styles.cardHeader}>
           <View style={styles.headerLeft}>
@@ -114,14 +119,14 @@ export default function ThreatsScreen() {
           <Text style={styles.cardTime}>{timeAgo(item.timestamp)}</Text>
           <TouchableOpacity onPress={() => handleBlock(ip)} disabled={blockingIp === ip || blockedIps.has(ip) || ip === 'Unknown'}>
             <LinearGradient
-              colors={[blockedIps.has(ip) ? Theme.colors.successDim : colorDim, 'rgba(0,0,0,0)']}
+              colors={[blockedIps.has(ip) ? theme.colors.successDim : colorDim, 'rgba(0,0,0,0)']}
               start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
-              style={[styles.actionBtn, { borderColor: (blockedIps.has(ip) ? Theme.colors.success : color) + '40', borderWidth: 1 }]}
+              style={[styles.actionBtn, { borderColor: (blockedIps.has(ip) ? theme.colors.success : color) + '40', borderWidth: 1 }]}
             >
               {blockingIp === ip ? (
                 <ActivityIndicator size="small" color={color} />
               ) : (
-                <Text style={[styles.actionBtnText, { color: blockedIps.has(ip) ? Theme.colors.success : color }]}>
+                <Text style={[styles.actionBtnText, { color: blockedIps.has(ip) ? theme.colors.success : color }]}>
                   {blockedIps.has(ip) ? 'BLOCKED' : 'BLOCK ORIGIN'}
                 </Text>
               )}
@@ -138,7 +143,7 @@ export default function ThreatsScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>
-            Threat<Text style={{ color: '#58A6FF' }}> Intelligence</Text>
+            Threat<Text style={{ color: theme.colors.primary }}>Intelligence</Text>
           </Text>
           <Text style={styles.headerSub}>{count} recent events</Text>
         </View>
@@ -150,7 +155,7 @@ export default function ThreatsScreen() {
 
       {loading ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={Theme.colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -159,10 +164,10 @@ export default function ThreatsScreen() {
           renderItem={renderAlert}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.colors.primary} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Ionicons name="shield-checkmark-outline" size={48} color={Theme.colors.success} />
+              <Ionicons name="shield-checkmark-outline" size={48} color={theme.colors.success} />
               <Text style={styles.emptyText}>No threats detected</Text>
               <Text style={styles.emptySubText}>Run the traffic simulator to generate data</Text>
             </View>
@@ -173,39 +178,39 @@ export default function ThreatsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: Theme.colors.background },
-  header:        { padding: Theme.spacing.lg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerTitle:   { color: Theme.colors.text, fontSize: 20, fontWeight: 'bold' },
-  headerSub:     { color: Theme.colors.textMuted, fontSize: 12, marginTop: 2 },
-  liveBadge:     { flexDirection: 'row', alignItems: 'center', backgroundColor: Theme.colors.primaryDim, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 5 },
-  liveDot:       { width: 6, height: 6, borderRadius: 3, backgroundColor: Theme.colors.primary },
-  liveText:      { color: Theme.colors.primary, fontSize: 9, fontWeight: 'bold', letterSpacing: 1 },
+const getStyles = (theme: Theme) => StyleSheet.create({
+  container:     { flex: 1, backgroundColor: theme.colors.background },
+  header:        { padding: SharedStyles.spacing.lg, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  headerTitle:   { color: theme.colors.text, fontSize: 20, fontWeight: 'bold' },
+  headerSub:     { color: theme.colors.textMuted, fontSize: 12, marginTop: 2 },
+  liveBadge:     { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.primaryDim, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, gap: 5 },
+  liveDot:       { width: 6, height: 6, borderRadius: 3, backgroundColor: theme.colors.primary },
+  liveText:      { color: theme.colors.primary, fontSize: 9, fontWeight: 'bold', letterSpacing: 1 },
 
-  listContent:   { paddingHorizontal: Theme.spacing.lg, paddingBottom: 32, gap: Theme.spacing.md },
+  listContent:   { paddingHorizontal: SharedStyles.spacing.lg, paddingBottom: 32, gap: SharedStyles.spacing.md },
 
-  card:          { backgroundColor: '#161B22', padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: '#30363D', overflow: 'hidden', position: 'relative' },
+  card:          { backgroundColor: theme.colors.surface, padding: SharedStyles.spacing.md, borderRadius: SharedStyles.radii.lg, borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden', position: 'relative' },
   cardAccent:    { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.8 },
-  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Theme.spacing.sm },
+  cardHeader:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: SharedStyles.spacing.sm },
   headerLeft:    { flexDirection: 'row', alignItems: 'center', gap: 8 },
   iconBox:       { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  ipText:        { color: Theme.colors.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  ipText:        { color: theme.colors.text, fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
   badge:         { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   badgeText:     { fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
 
-  actionText:    { color: Theme.colors.textMuted, fontSize: 13, fontFamily: 'monospace', marginBottom: Theme.spacing.sm },
+  actionText:    { color: theme.colors.textMuted, fontSize: 13, fontFamily: 'monospace', marginBottom: SharedStyles.spacing.sm },
 
-  confRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: Theme.spacing.sm },
-  confBarBg:     { flex: 1, height: 4, backgroundColor: Theme.colors.border, borderRadius: 2, overflow: 'hidden' },
+  confRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: SharedStyles.spacing.sm },
+  confBarBg:     { flex: 1, height: 4, backgroundColor: theme.colors.border, borderRadius: 2, overflow: 'hidden' },
   confBarFill:   { height: 4, borderRadius: 2 },
   confLabel:     { fontSize: 10, fontWeight: 'bold', width: 52, textAlign: 'right' },
 
-  cardBottom:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: Theme.spacing.sm },
-  cardTime:      { color: Theme.colors.textMuted, fontSize: 11 },
+  cardBottom:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: SharedStyles.spacing.sm },
+  cardTime:      { color: theme.colors.textMuted, fontSize: 11 },
   actionBtn:     { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 6 },
   actionBtnText: { fontSize: 10, fontWeight: 'bold', letterSpacing: 0.5 },
 
   emptyState:    { flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80, gap: 10 },
-  emptyText:     { color: Theme.colors.textMuted, fontSize: 16, fontWeight: 'bold' },
-  emptySubText:  { color: Theme.colors.textMuted, fontSize: 12 },
+  emptyText:     { color: theme.colors.textMuted, fontSize: 16, fontWeight: 'bold' },
+  emptySubText:  { color: theme.colors.textMuted, fontSize: 12 },
 });

@@ -4,23 +4,29 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LineChart, BarChart } from 'react-native-chart-kit';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Theme from '../../constants/theme';
+import { SharedStyles, darkTheme, Theme } from '../../constants/theme';
+import { useTheme } from '../../context/ThemeContext';
 import { fetchTrafficHistory, fetchTopSources } from '../../constants/api';
 
 const { width } = Dimensions.get('window');
-const CHART_W = width - Theme.spacing.lg * 2 - 32;
+const CHART_W = width - SharedStyles.spacing.lg * 2 - 32;
 
-const chartConfig = {
-  backgroundGradientFrom: '#161B22',
-  backgroundGradientTo:   '#161B22',
+const getChartConfig = (theme: Theme) => ({
+  backgroundGradientFrom: theme.colors.surface,
+  backgroundGradientTo:   theme.colors.surface,
   color: (opacity = 1) => `rgba(31, 111, 235, ${opacity})`,
-  labelColor: (opacity = 1) => `rgba(125, 133, 144, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(${theme.isDark ? '125, 133, 144' : '101, 109, 118'}, ${opacity})`,
   strokeWidth: 3,
-  propsForDots: { r: '4', strokeWidth: '2', stroke: '#161B22' },
+  propsForDots: { r: '4', strokeWidth: '2', stroke: theme.colors.surface },
   decimalPlaces: 0,
-};
+});
 
 export default function AnalyticsScreen() {
+  const ctx = useTheme();
+  const theme = ctx?.theme ?? darkTheme;
+  const styles = getStyles(theme);
+  const chartConfig = getChartConfig(theme);
+
   const [traffic, setTraffic]   = useState<any[]>([]);
   const [sources, setSources]   = useState<any[]>([]);
   const [loading, setLoading]   = useState(true);
@@ -68,7 +74,7 @@ export default function AnalyticsScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={Theme.colors.primary} />
+          <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
       </SafeAreaView>
     );
@@ -79,33 +85,33 @@ export default function AnalyticsScreen() {
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={Theme.colors.primary} />}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}>
 
         <View style={styles.header}>
           <Text style={styles.headerTitle}>
-            Live<Text style={{ color: '#58A6FF' }}> Analytics</Text>
+            Live<Text style={{ color: theme.colors.primary }}> Analytics</Text>
           </Text>
           <Text style={styles.headerSub}>Rolling 20-min window · refreshes every 10s</Text>
         </View>
 
         {/* Summary chips */}
         <View style={styles.chips}>
-          <Chip icon="warning" color={Theme.colors.danger} label="Threats" value={totals.threats} />
-          <Chip icon="ban"     color={Theme.colors.warning} label="Blocked" value={totals.blocked} />
-          <Chip icon="flash"   color={Theme.colors.primary} label="Events"  value={totals.events} />
+          <Chip icon="warning" color={theme.colors.danger} label="Threats" value={totals.threats} />
+          <Chip icon="ban"     color={theme.colors.warning} label="Blocked" value={totals.blocked} />
+          <Chip icon="flash"   color={theme.colors.primary} label="Events"  value={totals.events} />
         </View>
 
         {/* Threat timeline */}
         {traffic.length > 0 ? (
           <View style={styles.card}>
-            <View style={[styles.cardAccent, { backgroundColor: Theme.colors.primary }]} />
+            <View style={[styles.cardAccent, { backgroundColor: theme.colors.primary }]} />
             <Text style={styles.chartTitle}>Threats & Blocked / min</Text>
             <LineChart
               data={{
                 labels: lineLabels,
                 datasets: [
-                  { data: threatData.length ? threatData : [0], color: () => Theme.colors.danger,  strokeWidth: 2 },
-                  { data: blockData.length  ? blockData  : [0], color: () => Theme.colors.success, strokeWidth: 2 },
+                  { data: threatData.length ? threatData : [0], color: () => theme.colors.danger,  strokeWidth: 2 },
+                  { data: blockData.length  ? blockData  : [0], color: () => theme.colors.success, strokeWidth: 2 },
                 ],
                 legend: ['Threats', 'Blocked'],
               }}
@@ -123,8 +129,8 @@ export default function AnalyticsScreen() {
 
         {/* Total events timeline */}
         {traffic.length > 0 && (
-          <View style={[styles.card, { marginTop: Theme.spacing.lg }]}>
-            <View style={[styles.cardAccent, { backgroundColor: Theme.colors.success }]} />
+          <View style={[styles.card, { marginTop: SharedStyles.spacing.lg }]}>
+            <View style={[styles.cardAccent, { backgroundColor: theme.colors.success }]} />
             <Text style={styles.chartTitle}>Total Events / min</Text>
             <LineChart
               data={{ labels: lineLabels, datasets: [{ data: eventData.length ? eventData : [0] }] }}
@@ -140,8 +146,8 @@ export default function AnalyticsScreen() {
 
         {/* Top attacking IPs */}
         {sources.length > 0 ? (
-          <View style={[styles.card, { marginTop: Theme.spacing.lg }]}>
-            <View style={[styles.cardAccent, { backgroundColor: Theme.colors.danger }]} />
+          <View style={[styles.card, { marginTop: SharedStyles.spacing.lg }]}>
+            <View style={[styles.cardAccent, { backgroundColor: theme.colors.danger }]} />
             <Text style={styles.chartTitle}>Top Attacking IPs</Text>
             <BarChart
               data={{ labels: barLabels, datasets: [{ data: barData.length ? barData : [0] }] }}
@@ -160,7 +166,7 @@ export default function AnalyticsScreen() {
             ))}
           </View>
         ) : (
-          <View style={[styles.card, { marginTop: Theme.spacing.lg }]}>
+          <View style={[styles.card, { marginTop: SharedStyles.spacing.lg }]}>
             <EmptyChart label="No attacking IPs yet" />
           </View>
         )}
@@ -171,6 +177,9 @@ export default function AnalyticsScreen() {
 }
 
 function Chip({ icon, color, label, value }: { icon: any; color: string; label: string; value: number }) {
+  const ctx = useTheme();
+  const theme = ctx?.theme ?? darkTheme;
+  const styles = getStyles(theme);
   return (
     <LinearGradient
       colors={[`${color}25`, `${color}05`]}
@@ -185,36 +194,39 @@ function Chip({ icon, color, label, value }: { icon: any; color: string; label: 
 }
 
 function EmptyChart({ label }: { label: string }) {
+  const ctx = useTheme();
+  const theme = ctx?.theme ?? darkTheme;
+  const styles = getStyles(theme);
   return (
     <View style={styles.emptyChart}>
-      <Ionicons name="bar-chart-outline" size={32} color={Theme.colors.border} />
+      <Ionicons name="bar-chart-outline" size={32} color={theme.colors.border} />
       <Text style={styles.emptyChartText}>{label}</Text>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container:      { flex: 1, backgroundColor: Theme.colors.background },
-  scrollContent:  { padding: Theme.spacing.lg, paddingBottom: 40 },
+const getStyles = (theme: Theme) => StyleSheet.create({
+  container:      { flex: 1, backgroundColor: theme.colors.background },
+  scrollContent:  { padding: SharedStyles.spacing.lg, paddingBottom: 40 },
 
-  header:         { marginBottom: Theme.spacing.lg },
-  headerTitle:    { color: Theme.colors.text, fontSize: 22, fontWeight: 'bold' },
-  headerSub:      { color: Theme.colors.textMuted, fontSize: 12, marginTop: 3 },
+  header:         { marginBottom: SharedStyles.spacing.lg },
+  headerTitle:    { color: theme.colors.text, fontSize: 22, fontWeight: 'bold' },
+  headerSub:      { color: theme.colors.textMuted, fontSize: 12, marginTop: 3 },
 
-  chips:          { flexDirection: 'row', gap: 10, marginBottom: Theme.spacing.lg },
-  chip:           { flex: 1, alignItems: 'center', padding: Theme.spacing.sm, borderRadius: Theme.radii.md, borderWidth: 1, gap: 3 },
+  chips:          { flexDirection: 'row', gap: 10, marginBottom: SharedStyles.spacing.lg },
+  chip:           { flex: 1, alignItems: 'center', padding: SharedStyles.spacing.sm, borderRadius: SharedStyles.radii.md, borderWidth: 1, gap: 3 },
   chipValue:      { fontSize: 18, fontWeight: 'bold' },
-  chipLabel:      { color: Theme.colors.textMuted, fontSize: 10, fontWeight: '600' },
+  chipLabel:      { color: theme.colors.textMuted, fontSize: 10, fontWeight: '600' },
 
-  card:           { backgroundColor: '#161B22', padding: Theme.spacing.md, borderRadius: Theme.radii.lg, borderWidth: 1, borderColor: '#30363D', overflow: 'hidden', position: 'relative' },
+  card:           { backgroundColor: theme.colors.surface, padding: SharedStyles.spacing.md, borderRadius: SharedStyles.radii.lg, borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden', position: 'relative' },
   cardAccent:     { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.8 },
-  chartTitle:     { color: Theme.colors.text, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Theme.spacing.sm },
+  chartTitle:     { color: theme.colors.text, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SharedStyles.spacing.sm },
   chart:          { borderRadius: 12, marginTop: 4 },
 
-  ipRow:          { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: Theme.colors.border },
-  ipAddr:         { color: Theme.colors.text, fontSize: 12, fontFamily: 'monospace' },
-  ipCount:        { color: Theme.colors.danger, fontSize: 12, fontWeight: 'bold' },
+  ipRow:          { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: theme.colors.border },
+  ipAddr:         { color: theme.colors.text, fontSize: 12, fontFamily: 'monospace' },
+  ipCount:        { color: theme.colors.danger, fontSize: 12, fontWeight: 'bold' },
 
   emptyChart:     { alignItems: 'center', paddingVertical: 32, gap: 8 },
-  emptyChartText: { color: Theme.colors.textMuted, fontSize: 12, textAlign: 'center' },
+  emptyChartText: { color: theme.colors.textMuted, fontSize: 12, textAlign: 'center' },
 });
