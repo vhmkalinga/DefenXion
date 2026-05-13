@@ -106,7 +106,25 @@ async function put(path: string, body: any, retry = true): Promise<any> {
     const ok = await reLogin();
     if (ok) return put(path, body, false);
     logout();
-    router.replace('/');
+    router.replace('/login');
+    throw new Error(`401 ${path} — login required`);
+  }
+
+  if (!res.ok) throw new Error(`${res.status} ${path}`);
+  return res.json();
+}
+
+async function del(path: string, retry = true): Promise<any> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+
+  if (res.status === 401 && retry) {
+    const ok = await reLogin();
+    if (ok) return del(path, false);
+    logout();
+    router.replace('/login');
     throw new Error(`401 ${path} — login required`);
   }
 
@@ -121,7 +139,14 @@ export async function login(username: string, password: string) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`,
   });
-  if (!res.ok) throw new Error('Login failed');
+  if (!res.ok) {
+    let msg = 'Login failed';
+    try {
+      const errData = await res.json();
+      if (errData.detail) msg = errData.detail;
+    } catch (e) {}
+    throw new Error(msg);
+  }
   const data = await res.json();
   if (data.access_token) {
     setAuthToken(data.access_token);
@@ -136,7 +161,14 @@ export async function login2FA(temp_token: string, otp_code: string, username: s
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ temp_token, otp_code }),
   });
-  if (!res.ok) throw new Error('2FA Login failed');
+  if (!res.ok) {
+    let msg = '2FA Login failed';
+    try {
+      const errData = await res.json();
+      if (errData.detail) msg = errData.detail;
+    } catch (e) {}
+    throw new Error(msg);
+  }
   const data = await res.json();
   if (data.access_token) {
     setAuthToken(data.access_token);
@@ -161,9 +193,18 @@ export const fetchTrafficHistory = () => get('/dashboard/analytics/traffic');
 export const fetchTopSources     = () => get('/dashboard/analytics/top-sources');
 export const getSystemLogs       = (page = 1, limit = 50) => get(`/logs?page=${page}&limit=${limit}`);
 
+// ── Session Management ────────────────────────────────────────────────
+export const fetchActiveSessions = () => get('/auth/sessions');
+export const revokeSession       = (sessionId: string) => del(`/auth/sessions/${sessionId}`);
+
 // ── Firewall & Defense ────────────────────────────────────────────────
 export const createFirewallRule  = (rule: { name: string; priority?: string; action?: string }) => post('/defense/firewall-rules', rule);
 
 // ── App Settings ──────────────────────────────────────────────────────
 export const getAppSettings      = () => get('/settings/app');
 export const updateAppSettings   = (settings: any) => put('/settings/app', settings);
+
+// ── Profile ───────────────────────────────────────────────────────────
+export const getMe               = () => get('/auth/me');
+export const updateMe            = (data: any) => put('/auth/me', data);
+export const updatePushToken     = (token: string | null) => post('/auth/push-token', { token });
