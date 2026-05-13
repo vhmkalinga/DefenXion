@@ -19,8 +19,7 @@ import { ReportsLogs } from "./components/pages/ReportsLogs";
 import { Settings } from "./components/pages/Settings";
 import { Profile } from "./components/pages/Profile";
 import { DashboardOverview } from "./components/pages/DashboardOverview";
-import { PcapInspector } from "./components/pages/PcapInspector";
-import { NetworkGraph } from "./components/pages/NetworkGraph";
+
 
 import { Login } from "./components/auth/Login";
 import { MobileLogin } from "./components/auth/MobileLogin";
@@ -58,7 +57,7 @@ export default function App() {
     const handleCopilotNav = (e: Event) => {
       const page = (e as CustomEvent).detail as string;
       // page is a key like "threats", "reports", "defense", "settings", "model", "analytics"
-      const validPages = ["threats", "reports", "defense", "settings", "model", "analytics", "profile", "dashboard", "pcap", "network"];
+      const validPages = ["threats", "reports", "defense", "settings", "model", "analytics", "profile", "dashboard"];
       if (validPages.includes(page)) {
         setActiveItem(page);
       }
@@ -140,10 +139,6 @@ export default function App() {
   // =========================
   const renderPage = () => {
     switch (activeItem) {
-      case "network":
-        return <NetworkGraph />;
-      case "pcap":
-        return <PcapInspector />;
       case "analytics":
         return <LiveAnalytics />;
       case "threats":

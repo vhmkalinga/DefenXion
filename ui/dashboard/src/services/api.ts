@@ -453,4 +453,14 @@ export const getNetworkGraph = async () => {
   return response.data;
 };
 
+export const getActiveSessions = async () => {
+  const response = await api.get("/auth/sessions");
+  return response.data;
+};
+
+export const revokeSession = async (sessionId: string) => {
+  const response = await api.delete(`/auth/sessions/${sessionId}`);
+  return response.data;
+};
+
 export default api;
