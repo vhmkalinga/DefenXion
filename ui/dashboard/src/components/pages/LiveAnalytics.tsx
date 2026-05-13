@@ -6,9 +6,15 @@ import {
 } from 'recharts';
 import {
   Activity, AlertTriangle, Shield, TrendingUp, RefreshCw,
-  Wifi, Cpu, Globe, Server, ChevronRight,
+  Wifi, Cpu, Globe, Server, ChevronRight, Network,
 } from 'lucide-react';
 import { useAnalytics } from '../../context/AnalyticsContext';
+import { NetworkGraph } from './NetworkGraph';
+
+const LA_TABS = [
+  { id: 'analytics', label: 'Live Analytics', icon: Activity },
+  { id: 'network', label: 'Network Graph', icon: Network },
+] as const;
 
 const TOOLTIP = {
   backgroundColor: '#0D1117',
@@ -158,6 +164,7 @@ function ThreatMixGauge({ threats, blocked, traffic }: { threats:number; blocked
    MAIN PAGE
 ══════════════════════════════════════════════════════════ */
 export function LiveAnalytics() {
+  const [activeTab, setActiveTab] = useState<'analytics' | 'network'>('analytics');
   const { trafficHistory, portBreakdown, topSources, stats, isLoaded, refresh } = useAnalytics();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -194,9 +201,26 @@ export function LiveAnalytics() {
         .la-row:nth-child(2){animation-delay:.06s}
         .la-row:nth-child(3){animation-delay:.12s}
         .la-row:nth-child(4){animation-delay:.18s}
+        .la-tab { display:flex; align-items:center; gap:7px; padding:10px 20px; border:none; border-bottom:2px solid transparent; background:transparent; color:#7D8590; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; transition:all 0.2s; }
+        .la-tab:hover { color:#C9D1D9; background:rgba(255,255,255,0.03); }
+        .la-tab.active { color:#58A6FF; border-bottom-color:#1F6FEB; background:rgba(31,111,235,0.06); }
       `}</style>
 
-      <div style={{ padding:'28px 32px', maxWidth:1440, margin:'0 auto' }}>
+      <div style={{ padding:'0 32px 28px', maxWidth:1440, margin:'0 auto' }}>
+
+        {/* ── Tab Bar ── */}
+        <div style={{ display:'flex', gap:0, borderBottom:'1px solid #21262D', marginBottom:24, paddingTop:20 }}>
+          {LA_TABS.map(tab => {
+            const Icon = tab.icon;
+            return (
+              <button key={tab.id} className={`la-tab ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
+                <Icon size={15} /> {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === 'network' ? <NetworkGraph /> : (<>
 
         {/* ── Header ── */}
         <div className="la-row" style={{ display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:24 }}>
@@ -398,6 +422,8 @@ export function LiveAnalytics() {
             <ChevronRight size={12}/> Auto-refreshes every 10s
           </div>
         </div>
+
+        </>)}
 
       </div>
     </>

@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Brain, Zap, Database, TrendingUp, Activity, CheckCircle, AlertCircle, Loader2, Trash2, Power, Eye } from 'lucide-react';
+import { Brain, Zap, Database, TrendingUp, Activity, CheckCircle, AlertCircle, Loader2, Trash2, Power, Eye, Radar } from 'lucide-react';
 import { getModelStats, trainNewModel, getDeployedModels, activateModel, deleteModel, getModelDetails } from '../../services/api';
 import { toast } from 'sonner';
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { PcapInspector } from './PcapInspector';
 
 // Hardcoded constants removed in favor of dynamic `activeModel` properties
 
+const TABS = [
+  { id: 'model', label: 'AI Model Management', icon: Brain },
+  { id: 'pcap', label: 'PCAP Inspector', icon: Radar },
+] as const;
+
 export function AIModel() {
+  const [activeTab, setActiveTab] = useState<'model' | 'pcap'>('model');
   const [modelStats, setModelStats] = useState<any>(null);
   const [isTraining, setIsTraining] = useState(false);
   const [trainingMessage, setTrainingMessage] = useState('');
@@ -105,9 +112,26 @@ export function AIModel() {
         .ai-row { animation:ai-fadeup 0.35s ease both; }
         .ai-row:nth-child(2){animation-delay:.06s} .ai-row:nth-child(3){animation-delay:.12s}
         .ai-row:nth-child(4){animation-delay:.18s} .ai-row:nth-child(5){animation-delay:.24s}
+        .ai-tab { display:flex; align-items:center; gap:7px; padding:10px 20px; border:none; border-bottom:2px solid transparent; background:transparent; color:#7D8590; font-size:13px; font-weight:600; font-family:inherit; cursor:pointer; transition:all 0.2s; }
+        .ai-tab:hover { color:#C9D1D9; background:rgba(255,255,255,0.03); }
+        .ai-tab.active { color:#58A6FF; border-bottom-color:#1F6FEB; background:rgba(31,111,235,0.06); }
       `}</style>
 
-    <div style={{ padding:'28px 32px', maxWidth:1440, margin:'0 auto' }}>
+    <div style={{ padding:'0 32px 28px', maxWidth:1440, margin:'0 auto' }}>
+
+      {/* ── Tab Bar ── */}
+      <div style={{ display:'flex', gap:0, borderBottom:'1px solid #21262D', marginBottom:24, paddingTop:20 }}>
+        {TABS.map(tab => {
+          const Icon = tab.icon;
+          return (
+            <button key={tab.id} className={`ai-tab ${activeTab === tab.id ? 'active' : ''}`} onClick={() => setActiveTab(tab.id)}>
+              <Icon size={15} /> {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {activeTab === 'pcap' ? <PcapInspector /> : (<>
 
       {/* ── Header ── */}
       <div className="ai-row" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:24 }}>
@@ -419,6 +443,8 @@ export function AIModel() {
           </div>
         </div>
       </div>
+
+      </>)}
 
     </div>
     </>

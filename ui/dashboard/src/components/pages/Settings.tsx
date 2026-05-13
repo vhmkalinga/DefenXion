@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Shield, Mail, Database, Users, Globe, Lock, Bell, Slack, Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive, FileText, Trash2, UserPlus, X, Crown, Key, Loader2, Settings as SI, RefreshCw, AlertTriangle, Copy, Check } from "lucide-react";
+import { Shield, Mail, Database, Users, Globe, Lock, Bell, Slack, Clock, CheckCircle, Save, Eye, EyeOff, Server, HardDrive, FileText, Trash2, UserPlus, X, Crown, Key, Loader2, Settings as SI, RefreshCw, AlertTriangle, Copy, Check, MonitorSmartphone, LogOut } from "lucide-react";
 import { Switch } from "../ui/switch";
 import { toast } from 'sonner';
-import { getAppSettings, updateAppSettings, changePassword, getSystemInfo, listUsers, createUser, deleteUser, adminResetPassword, getMe, setup2FA, verifySetup2FA, disable2FA, listResetRequests, approveResetRequest, rejectResetRequest, dismissResetRequest } from '../../services/api';
+import { getAppSettings, updateAppSettings, changePassword, getSystemInfo, listUsers, createUser, deleteUser, adminResetPassword, getMe, setup2FA, verifySetup2FA, disable2FA, listResetRequests, approveResetRequest, rejectResetRequest, dismissResetRequest, getActiveSessions, revokeSession } from '../../services/api';
 import { useTheme } from '../../context/ThemeContext';
 import { QRCodeSVG } from 'qrcode.react';
 
@@ -43,6 +43,9 @@ export function Settings() {
 
   const [isLoading, setIsLoading] = useState(true);
 
+  const [activeSessions, setActiveSessions] = useState<any[]>([]);
+  const [isRevokingId, setIsRevokingId] = useState<string | null>(null);
+
   // ── Access Requests (Forgot Password) ──
   const [resetRequests, setResetRequests] = useState<any[]>([]);
   const [rejectTarget, setRejectTarget] = useState<string | null>(null);
@@ -57,7 +60,8 @@ export function Settings() {
       getSystemInfo().then(setSystemInfo),
       listUsers().then(setTeamUsers),
       getMe().then(setProfile),
-      listResetRequests().then(setResetRequests).catch(() => {})
+      listResetRequests().then(setResetRequests).catch(() => {}),
+      getActiveSessions().then(res => setActiveSessions(res?.sessions || [])).catch(() => {})
     ]).finally(() => setIsLoading(false));
   }, []);
 
@@ -142,6 +146,19 @@ export function Settings() {
       listResetRequests().then(setResetRequests);
     } catch(e: any) {
       toast.error('Failed to dismiss');
+    }
+  };
+
+  const handleRevokeSession = async (sessionId: string) => {
+    setIsRevokingId(sessionId);
+    try {
+      await revokeSession(sessionId);
+      setActiveSessions(prev => prev.filter(s => s.id !== sessionId));
+      toast.success('Session revoked');
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || 'Failed to revoke session');
+    } finally {
+      setIsRevokingId(null);
     }
   };
 
@@ -339,6 +356,35 @@ export function Settings() {
           <div><div style={L}>Confirm</div><input type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} style={I}/>{confirmPassword&&newPassword!==confirmPassword&&<div style={{color:'#FF4D4D',fontSize:11,marginTop:4}}>Mismatch</div>}</div>
           <button disabled={isChangingPassword||newPassword.length<8||newPassword!==confirmPassword} onClick={handleChangePw} style={{display:'flex',alignItems:'center',gap:6,padding:'8px 14px',borderRadius:8,border:'none',cursor:'pointer',background:'linear-gradient(135deg,#3FB950,#2ea043)',color:'white',fontSize:12,fontWeight:600,fontFamily:'inherit',opacity:(newPassword.length<8||newPassword!==confirmPassword)?0.4:1}}><CheckCircle size={13}/> {isChangingPassword?'Changing…':'Update'}</button>
         </div>}
+      </div>
+
+      <div style={S}>
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12}}>
+          <MonitorSmartphone size={16} color="#BC8CFF"/>
+          <div><div style={{color:'#E6EDF3',fontSize:13,fontWeight:500}}>Active Devices</div><div style={{color:'#7D8590',fontSize:12}}>Manage your current active sessions</div></div>
+        </div>
+        <div style={{display:'flex',flexDirection:'column',gap:8}}>
+          {activeSessions.length === 0 ? (
+             <div style={{color:'#7D8590',fontSize:12,padding:'10px 0',textAlign:'center'}}>No active sessions found.</div>
+          ) : activeSessions.map((session: any) => (
+            <div key={session.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(13,17,23,0.5)',borderRadius:10,padding:'10px 14px',border:'1px solid #21262D'}}>
+              <div>
+                <div style={{color:'#E6EDF3',fontSize:13,fontWeight:600}}>{session.device_info || 'Unknown Device'}</div>
+                <div style={{display:'flex',gap:10,marginTop:4}}>
+                  <span style={{color:'#7D8590',fontSize:11}}>IP: {session.ip}</span>
+                  <span style={{color:'#7D8590',fontSize:11}}>{new Date(session.created_at).toLocaleString()}</span>
+                </div>
+              </div>
+              <button 
+                disabled={isRevokingId === session.id}
+                onClick={() => handleRevokeSession(session.id)} 
+                style={{padding:'6px 12px',borderRadius:8,background:'rgba(255,77,77,0.08)',border:'1px solid rgba(255,77,77,0.3)',color:'#FF4D4D',fontSize:11,fontWeight:600,cursor:(isRevokingId === session.id)?'not-allowed':'pointer',display:'flex',alignItems:'center',gap:4,opacity:(isRevokingId===session.id)?0.6:1}}
+              >
+                {isRevokingId===session.id?<Loader2 size={12} style={{animation:'ss .8s linear infinite'}}/>:<LogOut size={12}/>} Revoke
+              </button>
+            </div>
+          ))}
+        </div>
       </div>
     </div></div>}
 

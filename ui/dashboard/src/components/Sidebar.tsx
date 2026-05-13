@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Home, BarChart3, AlertTriangle, Brain, Shield, FileText, Settings, User, LucideIcon, ChevronsLeft, ChevronsRight, Radar, Network } from "lucide-react";
+import { Home, BarChart3, AlertTriangle, Brain, Shield, FileText, Settings, User, LucideIcon, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
 
 interface SidebarProps { activeItem: string; onItemClick: (item: string) => void; collapsed: boolean; onToggle: () => void; }
@@ -9,8 +9,6 @@ const menuItems: MenuItem[] = [
   { id: "dashboard", label: "Dashboard Overview", icon: Home },
   { id: "analytics", label: "Live Analytics", icon: BarChart3 },
   { id: "threats", label: "Detected Threats", icon: AlertTriangle },
-  { id: "pcap", label: "PCAP Inspector", icon: Radar },
-  { id: "network", label: "Network Graph", icon: Network },
   { id: "model", label: "AI Model", icon: Brain, adminOnly: true },
   { id: "defense", label: "Active Defense", icon: Shield, adminOnly: true },
   { id: "reports", label: "Reports & Logs", icon: FileText, adminOnly: true },
@@ -124,13 +122,13 @@ export function Sidebar({ activeItem, onItemClick, collapsed, onToggle }: Sideba
       {/* Navigation */}
       <nav style={{ flex:1, padding: collapsed ? '14px 6px' : '14px 12px 14px 2px', overflowY:'auto', overflowX:'hidden' }}>
         {sectionLabel('Navigation')}
-        {menuItems.slice(0, 5).map(renderItem)}
+        {menuItems.slice(0, 3).map(renderItem)}
         <div style={{ height:12 }} />
         {sectionLabel('Administration')}
-        {menuItems.slice(5, 8).map(renderItem)}
+        {menuItems.slice(3, 6).map(renderItem)}
         <div style={{ height:12 }} />
         {sectionLabel('Account')}
-        {menuItems.slice(8).map(renderItem)}
+        {menuItems.slice(6).map(renderItem)}
       </nav>
 
       {/* Toggle Button */}
