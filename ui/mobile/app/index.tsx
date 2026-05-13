@@ -7,11 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Theme from '../constants/theme';
+import { SharedStyles, Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import { login, login2FA, BASE_URL } from '../constants/api';
 import { saveCredentialsSecurely, getStoredCredentials, promptBiometricAuth } from '../utils/biometrics';
 
 export default function LoginScreen() {
+  const { theme } = useTheme();
+  const styles = getStyles(theme);
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -43,9 +46,14 @@ export default function LoginScreen() {
       }
 
       await saveCredentialsSecurely(email, password);
-      router.replace('/(tabs)');
-    } catch (err) {
-      Alert.alert('Access Denied', `Could not authenticate. Ensure the server is running.\n${BASE_URL}`);
+      router.replace('/(tabs)/dashboard');
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('Network request failed')) {
+        Alert.alert('Connection Error', `Could not reach the server. Ensure the backend is running.\n${BASE_URL}`);
+      } else {
+        Alert.alert('Access Denied', errMsg || 'Could not authenticate.');
+      }
     } finally {
       setLoading(false);
     }
@@ -61,9 +69,14 @@ export default function LoginScreen() {
     try {
       await login2FA(tempToken, otpCode, email, password);
       await saveCredentialsSecurely(email, password);
-      router.replace('/(tabs)');
-    } catch (err) {
-      Alert.alert('Verification Failed', 'Invalid 2FA code.');
+      router.replace('/(tabs)/dashboard');
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('Network request failed')) {
+        Alert.alert('Connection Error', `Could not reach the server.`);
+      } else {
+        Alert.alert('Verification Failed', errMsg || 'Invalid 2FA code.');
+      }
     } finally {
       setLoading(false);
     }
@@ -88,9 +101,14 @@ export default function LoginScreen() {
 
       // Biometric success, now authenticate with API
       await login(stored.username, stored.password);
-      router.replace('/(tabs)');
-    } catch (err) {
-      Alert.alert('Access Denied', 'Authentication failed after biometric verification.');
+      router.replace('/(tabs)/dashboard');
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      if (errMsg.includes('Failed to fetch') || errMsg.includes('Network request failed')) {
+        Alert.alert('Connection Error', `Could not reach the server.`);
+      } else {
+        Alert.alert('Access Denied', errMsg || 'Authentication failed after biometric verification.');
+      }
     } finally {
       setBioLoading(false);
     }
@@ -112,7 +130,7 @@ export default function LoginScreen() {
             <Ionicons name="shield" size={20} color="#FFFFFF" />
           </LinearGradient>
           <Text style={styles.loginTitle}>
-            Defen<Text style={{ color: '#58A6FF' }}>Xion</Text>
+            Defen<Text style={{ color: theme.colors.primary }}>Xion</Text>
           </Text>
         </View>
 
@@ -129,11 +147,11 @@ export default function LoginScreen() {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>USERNAME</Text>
                 <View style={[styles.inputContainer, focusedInput === 'email' && styles.inputFocused]}>
-                  <Ionicons name="person-outline" size={18} color={focusedInput === 'email' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                  <Ionicons name="person-outline" size={18} color={focusedInput === 'email' ? theme.colors.primary : theme.colors.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter username"
-                    placeholderTextColor={Theme.colors.border}
+                    placeholderTextColor={theme.colors.border}
                     value={email}
                     onChangeText={setEmail}
                     autoCapitalize="none"
@@ -146,11 +164,11 @@ export default function LoginScreen() {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>PASSWORD</Text>
                 <View style={[styles.inputContainer, focusedInput === 'password' && styles.inputFocused]}>
-                  <Ionicons name="lock-closed-outline" size={18} color={focusedInput === 'password' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                  <Ionicons name="lock-closed-outline" size={18} color={focusedInput === 'password' ? theme.colors.primary : theme.colors.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Enter password"
-                    placeholderTextColor={Theme.colors.border}
+                    placeholderTextColor={theme.colors.border}
                     secureTextEntry={!showPw}
                     value={password}
                     onChangeText={setPassword}
@@ -158,14 +176,14 @@ export default function LoginScreen() {
                     onBlur={() => setFocusedInput(null)}
                   />
                   <TouchableOpacity onPress={() => setShowPw(!showPw)}>
-                     <Ionicons name={showPw ? "eye-outline" : "eye-off-outline"} size={18} color={Theme.colors.textMuted} />
+                     <Ionicons name={showPw ? "eye-outline" : "eye-off-outline"} size={18} color={theme.colors.textMuted} />
                   </TouchableOpacity>
                 </View>
               </View>
 
               <TouchableOpacity onPress={handleLogin} disabled={loading} style={{ marginTop: 8 }}>
                 <LinearGradient
-                  colors={['#1F6FEB', '#2679f5', '#58A6FF']}
+                  colors={[theme.colors.primary, theme.colors.primary, theme.colors.primary]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={styles.loginButton}
@@ -189,10 +207,10 @@ export default function LoginScreen() {
 
               <TouchableOpacity style={styles.biometricButton} onPress={handleBiometricLogin} disabled={bioLoading || loading}>
                  {bioLoading ? (
-                   <ActivityIndicator color={Theme.colors.text} size="small" />
+                   <ActivityIndicator color={theme.colors.text} size="small" />
                  ) : (
                    <>
-                     <Ionicons name="finger-print" size={20} color={Theme.colors.text} />
+                     <Ionicons name="finger-print" size={20} color={theme.colors.text} />
                      <Text style={styles.biometricText}>Biometric Login</Text>
                    </>
                  )}
@@ -203,11 +221,11 @@ export default function LoginScreen() {
               <View style={styles.inputGroup}>
                 <Text style={styles.inputLabel}>AUTHENTICATOR CODE</Text>
                 <View style={[styles.inputContainer, focusedInput === 'otp' && styles.inputFocused]}>
-                  <Ionicons name="keypad-outline" size={18} color={focusedInput === 'otp' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                  <Ionicons name="keypad-outline" size={18} color={focusedInput === 'otp' ? theme.colors.primary : theme.colors.textMuted} style={styles.inputIcon} />
                   <TextInput
                     style={[styles.input, { letterSpacing: 8, fontSize: 18 }]}
                     placeholder="000000"
-                    placeholderTextColor={Theme.colors.border}
+                    placeholderTextColor={theme.colors.border}
                     keyboardType="numeric"
                     maxLength={6}
                     value={otpCode}
@@ -228,7 +246,7 @@ export default function LoginScreen() {
 
                 <TouchableOpacity onPress={handle2FASubmit} disabled={loading || otpCode.length !== 6} style={{ flex: 1 }}>
                   <LinearGradient
-                    colors={['#1F6FEB', '#2679f5', '#58A6FF']}
+                    colors={[theme.colors.primary, theme.colors.primary, theme.colors.primary]}
                     start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
                     style={[styles.loginButton, { opacity: (loading || otpCode.length !== 6) ? 0.6 : 1 }]}
                   >
@@ -256,62 +274,62 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0B0F19' },
-  loginWrapper: { flex: 1, justifyContent: 'center', paddingHorizontal: Theme.spacing.lg },
+const getStyles = (theme: Theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  loginWrapper: { flex: 1, justifyContent: 'center', paddingHorizontal: SharedStyles.spacing.lg },
   
-  logoSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: Theme.spacing.xxl, gap: 12 },
+  logoSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: SharedStyles.spacing.xxl, gap: 12 },
   iconBox: { 
     width: 40, height: 40, borderRadius: 10, alignItems: 'center', justifyContent: 'center',
     ...Platform.select({
-      web: { boxShadow: '0 4px 16px rgba(31,111,235,0.4)' } as any,
-      default: { elevation: 8, shadowColor: '#1F6FEB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
+      web: { boxShadow: `0 4px 16px ${theme.colors.primaryDim}` } as any,
+      default: { elevation: 8, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8 },
     }),
   },
-  loginTitle: { color: Theme.colors.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.3 },
+  loginTitle: { color: theme.colors.text, fontSize: 24, fontWeight: '700', letterSpacing: -0.3 },
   
   formContainer: { 
-    width: '100%', backgroundColor: '#161B22', padding: Theme.spacing.xl, borderRadius: 20, 
-    borderWidth: 1, borderColor: '#21262D', overflow: 'hidden', position: 'relative' as const,
+    width: '100%', backgroundColor: theme.colors.surface, padding: SharedStyles.spacing.xl, borderRadius: 20, 
+    borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden', position: 'relative' as const,
   },
   accentLine: {
     position: 'absolute' as const, top: 0, left: '10%', right: '10%', height: 1,
-    backgroundColor: 'rgba(88,166,255,0.4)',
+    backgroundColor: theme.colors.primaryDim,
   },
-  welcomeText: { color: Theme.colors.textMuted, fontSize: 13, marginBottom: Theme.spacing.lg },
+  welcomeText: { color: theme.colors.textMuted, fontSize: 13, marginBottom: SharedStyles.spacing.lg },
   
-  inputGroup: { marginBottom: Theme.spacing.md },
-  inputLabel: { color: Theme.colors.textMuted, fontSize: 10, fontWeight: 'bold' as const, letterSpacing: 1, marginBottom: Theme.spacing.sm },
+  inputGroup: { marginBottom: SharedStyles.spacing.md },
+  inputLabel: { color: theme.colors.textMuted, fontSize: 10, fontWeight: 'bold' as const, letterSpacing: 1, marginBottom: SharedStyles.spacing.sm },
   
   inputContainer: { 
     flexDirection: 'row' as const, alignItems: 'center' as const, 
-    backgroundColor: 'rgba(13,17,23,0.8)', borderRadius: 10, 
-    borderWidth: 1, borderColor: '#30363D', paddingHorizontal: 14, height: 50,
+    backgroundColor: theme.colors.surfaceHighlight, borderRadius: 10, 
+    borderWidth: 1, borderColor: theme.colors.border, paddingHorizontal: 14, height: 50,
   },
-  inputFocused: { borderColor: Theme.colors.primary },
-  inputIcon: { marginRight: Theme.spacing.sm },
-  input: { flex: 1, color: Theme.colors.text, fontSize: 14 },
+  inputFocused: { borderColor: theme.colors.primary },
+  inputIcon: { marginRight: SharedStyles.spacing.sm },
+  input: { flex: 1, color: theme.colors.text, fontSize: 14 },
   
   loginButton: { 
     height: 50, borderRadius: 10, alignItems: 'center' as const, justifyContent: 'center' as const, 
     ...Platform.select({
-      web: { boxShadow: '0 4px 20px rgba(31,111,235,0.4)' } as any,
-      default: { elevation: 6, shadowColor: '#1F6FEB', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
+      web: { boxShadow: `0 4px 20px ${theme.colors.primaryDim}` } as any,
+      default: { elevation: 6, shadowColor: theme.colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10 },
     }),
   },
   loginButtonText: { color: '#FFFFFF', fontWeight: 'bold' as const, fontSize: 15 },
   
-  dividerBox: { flexDirection: 'row' as const, alignItems: 'center' as const, marginVertical: Theme.spacing.lg },
-  dividerLine: { flex: 1, height: 1, backgroundColor: '#21262D' },
-  dividerText: { color: Theme.colors.textMuted, marginHorizontal: Theme.spacing.md, fontSize: 11, fontWeight: 'bold' as const },
+  dividerBox: { flexDirection: 'row' as const, alignItems: 'center' as const, marginVertical: SharedStyles.spacing.lg },
+  dividerLine: { flex: 1, height: 1, backgroundColor: theme.colors.border },
+  dividerText: { color: theme.colors.textMuted, marginHorizontal: SharedStyles.spacing.md, fontSize: 11, fontWeight: 'bold' as const },
   
   biometricButton: { 
     flexDirection: 'row' as const, alignItems: 'center' as const, justifyContent: 'center' as const, 
-    backgroundColor: 'rgba(255,255,255,0.03)', height: 50, borderRadius: 12, 
-    borderWidth: 1, borderColor: '#21262D', gap: Theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceHighlight, height: 50, borderRadius: 12, 
+    borderWidth: 1, borderColor: theme.colors.border, gap: SharedStyles.spacing.sm,
   },
-  biometricText: { color: Theme.colors.text, fontSize: 14, fontWeight: '600' as const },
+  biometricText: { color: theme.colors.text, fontSize: 14, fontWeight: '600' as const },
   
-  footer: { alignItems: 'center' as const, marginTop: Theme.spacing.xl },
-  footerText: { color: '#30363D', fontSize: 11 },
+  footer: { alignItems: 'center' as const, marginTop: SharedStyles.spacing.xl },
+  footerText: { color: theme.colors.textMuted, fontSize: 11 },
 });

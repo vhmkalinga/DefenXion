@@ -6,7 +6,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import Theme from '../constants/theme';
+import { SharedStyles, Theme } from '../constants/theme';
+import { useTheme } from '../context/ThemeContext';
 import Constants from 'expo-constants';
 
 const getHostUrl = () => {
@@ -21,6 +22,8 @@ const hostIp = getHostUrl();
 const API_BASE_URL = `http://${hostIp}:8000`;
 
 export default function RegisterScreen() {
+  const { theme } = useTheme();
+  const styles = getStyles(theme);
   const router = useRouter();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -51,7 +54,7 @@ export default function RegisterScreen() {
 
           <View style={styles.logoSection}>
             <View style={styles.iconBox}>
-              <Ionicons name="shield-checkmark" size={32} color={Theme.colors.primary} />
+              <Ionicons name="shield-checkmark" size={32} color={theme.colors.primary} />
             </View>
             <Text style={styles.loginTitle}>DefenXion</Text>
           </View>
@@ -62,11 +65,11 @@ export default function RegisterScreen() {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>FULL NAME</Text>
               <View style={[styles.inputContainer, focusedInput === 'name' && styles.inputFocused]}>
-                <Ionicons name="person-outline" size={20} color={focusedInput === 'name' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                <Ionicons name="person-outline" size={20} color={focusedInput === 'name' ? theme.colors.primary : theme.colors.textMuted} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="John Doe"
-                  placeholderTextColor={Theme.colors.border}
+                  placeholderTextColor={theme.colors.border}
                   value={name}
                   onChangeText={setName}
                   onFocus={() => setFocusedInput('name')}
@@ -78,11 +81,11 @@ export default function RegisterScreen() {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
               <View style={[styles.inputContainer, focusedInput === 'email' && styles.inputFocused]}>
-                <Ionicons name="mail-outline" size={20} color={focusedInput === 'email' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                <Ionicons name="mail-outline" size={20} color={focusedInput === 'email' ? theme.colors.primary : theme.colors.textMuted} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="admin@defenxion.local"
-                  placeholderTextColor={Theme.colors.border}
+                  placeholderTextColor={theme.colors.border}
                   value={email}
                   onChangeText={setEmail}
                   autoCapitalize="none"
@@ -96,11 +99,11 @@ export default function RegisterScreen() {
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>SECURE PASSWORD</Text>
               <View style={[styles.inputContainer, focusedInput === 'password' && styles.inputFocused]}>
-                <Ionicons name="lock-closed-outline" size={20} color={focusedInput === 'password' ? Theme.colors.primary : Theme.colors.textMuted} style={styles.inputIcon} />
+                <Ionicons name="lock-closed-outline" size={20} color={focusedInput === 'password' ? theme.colors.primary : theme.colors.textMuted} style={styles.inputIcon} />
                 <TextInput
                   style={styles.input}
                   placeholder="••••••••"
-                  placeholderTextColor={Theme.colors.border}
+                  placeholderTextColor={theme.colors.border}
                   secureTextEntry
                   value={password}
                   onChangeText={setPassword}
@@ -108,7 +111,7 @@ export default function RegisterScreen() {
                   onBlur={() => setFocusedInput(null)}
                 />
                 <TouchableOpacity>
-                   <Ionicons name="eye-off-outline" size={20} color={Theme.colors.textMuted} />
+                   <Ionicons name="eye-off-outline" size={20} color={theme.colors.textMuted} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -136,29 +139,36 @@ export default function RegisterScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Theme.colors.background },
-  loginWrapper: { flex: 1, paddingHorizontal: Theme.spacing.lg },
+const getStyles = (theme: Theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: theme.colors.background },
+  loginWrapper: { flex: 1, paddingHorizontal: SharedStyles.spacing.lg },
   
-  logoSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: Theme.spacing.xxl, gap: Theme.spacing.sm },
-  iconBox: { backgroundColor: Theme.colors.primaryDim, width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
-  loginTitle: { color: Theme.colors.text, fontSize: 28, fontWeight: 'bold', letterSpacing: 0.5 },
+  logoSection: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: SharedStyles.spacing.xxl, gap: SharedStyles.spacing.sm },
+  iconBox: { backgroundColor: theme.colors.primaryDim, width: 50, height: 50, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  loginTitle: { color: theme.colors.text, fontSize: 28, fontWeight: 'bold', letterSpacing: 0.5 },
   
-  formContainer: { width: '100%', backgroundColor: Theme.colors.surface, padding: Theme.spacing.xl, borderRadius: Theme.radii.xl, borderWidth: 1, borderColor: Theme.colors.border },
-  welcomeText: { color: Theme.colors.textMuted, fontSize: 14, marginBottom: Theme.spacing.lg },
+  formContainer: { width: '100%', backgroundColor: theme.colors.surface, padding: SharedStyles.spacing.xl, borderRadius: SharedStyles.radii.xl, borderWidth: 1, borderColor: theme.colors.border },
+  welcomeText: { color: theme.colors.textMuted, fontSize: 14, marginBottom: SharedStyles.spacing.lg },
   
-  inputGroup: { marginBottom: Theme.spacing.md },
-  inputLabel: { color: Theme.colors.textMuted, fontSize: 11, fontWeight: 'bold', letterSpacing: 1, marginBottom: Theme.spacing.sm },
+  inputGroup: { marginBottom: SharedStyles.spacing.md },
+  inputLabel: { color: theme.colors.textMuted, fontSize: 11, fontWeight: 'bold', letterSpacing: 1, marginBottom: SharedStyles.spacing.sm },
   
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#0A0D14', borderRadius: Theme.radii.md, borderWidth: 1, borderColor: '#1E242C', paddingHorizontal: Theme.spacing.md, height: 54 },
-  inputFocused: { borderColor: Theme.colors.primary },
-  inputIcon: { marginRight: Theme.spacing.sm },
-  input: { flex: 1, color: Theme.colors.text, fontSize: 16 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: theme.colors.surfaceHighlight, borderRadius: SharedStyles.radii.md, borderWidth: 1, borderColor: theme.colors.border, paddingHorizontal: SharedStyles.spacing.md, height: 54 },
+  inputFocused: { borderColor: theme.colors.primary },
+  inputIcon: { marginRight: SharedStyles.spacing.sm },
+  input: { flex: 1, color: theme.colors.text, fontSize: 16 },
   
-  loginButton: { backgroundColor: Theme.colors.primary, height: 54, borderRadius: Theme.radii.md, alignItems: 'center', justifyContent: 'center', marginTop: Theme.spacing.lg, shadowColor: Theme.colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 },
+  loginButton: { 
+    backgroundColor: theme.colors.primary, height: 54, borderRadius: SharedStyles.radii.md, 
+    alignItems: 'center', justifyContent: 'center', marginTop: SharedStyles.spacing.lg, 
+    ...Platform.select({
+      web: { boxShadow: `0 4px 10px ${theme.colors.primaryDim}` } as any,
+      default: { shadowColor: theme.colors.primary, shadowOpacity: 0.3, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 5 }
+    })
+  },
   loginButtonText: { color: '#FFFFFF', fontWeight: 'bold', fontSize: 15, letterSpacing: 1 },
   
-  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: Theme.spacing.xl },
-  footerText: { color: Theme.colors.textMuted, fontSize: 14 },
-  footerLink: { color: Theme.colors.primary, fontSize: 14, fontWeight: 'bold' }
+  footer: { flexDirection: 'row', justifyContent: 'center', marginTop: SharedStyles.spacing.xl },
+  footerText: { color: theme.colors.textMuted, fontSize: 14 },
+  footerLink: { color: theme.colors.primary, fontSize: 14, fontWeight: 'bold' }
 });
