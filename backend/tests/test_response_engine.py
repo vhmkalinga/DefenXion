@@ -67,7 +67,7 @@ class TestAutomatedResponseLogic:
         mock_count.return_value = 0
 
         from backend.defenxion_response_engine import automated_response
-        action = automated_response(self._make_event(confidence=0.89))
+        action = automated_response(self._make_event(confidence=0.82))
         assert action == "ALERT_ADMIN"
 
     @patch("backend.defenxion_response_engine.defense_settings_collection")
