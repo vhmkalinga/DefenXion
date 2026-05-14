@@ -176,8 +176,18 @@ export const getGlobalSources = async () => {
   return response.data;
 };
 
+export const getThreatStats = async () => {
+  const response = await api.get("/dashboard/threats/stats");
+  return response.data;
+};
+
 export const getAllThreats = async (page = 1, limit = 20) => {
   const response = await api.get(`/dashboard/threats?page=${page}&limit=${limit}`);
+  return response.data;
+};
+
+export const resolveThreat = async (sourceIp: string, timestamp: string) => {
+  const response = await api.put("/threats/resolve", { source_ip: sourceIp, timestamp });
   return response.data;
 };
 

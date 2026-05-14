@@ -213,6 +213,20 @@ def predict_attack(
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user)
 ):
+    # --- Simulated Application-Level Firewall ---
+    # Because simulated traffic hits this API directly and bypasses the OS firewall, 
+    # we enforce the blocked IPs here to simulate dropped packets.
+    active_rule = firewall_rules_collection.find_one({
+        "ip": data.source_ip,
+        "status": "Active"
+    })
+    
+    if active_rule:
+        raise HTTPException(
+            status_code=403, 
+            detail=f"Connection dropped: IP {data.source_ip} is blocked by firewall."
+        )
+
     from backend.ml.predictor import predict
     
     # Dynamically find the currently active model from the DB
@@ -1465,6 +1479,51 @@ def get_global_sources(current_user: dict = Depends(get_current_user)):
 
 
 # --------------------------------------------------
+# Dashboard: Global Threat Stats
+# --------------------------------------------------
+@app.get("/dashboard/threats/stats")
+def get_threats_global_stats(current_user: dict = Depends(get_current_user)):
+    ATTACK_ACTIONS = ["BLOCK_IP", "CRITICAL_BLOCK", "ALERT_ADMIN"]
+    
+    pipeline = [
+        {"$match": {"action": {"$in": ATTACK_ACTIONS}}},
+        {"$group": {
+            "_id": "$action",
+            "count": {"$sum": 1}
+        }}
+    ]
+    results = list(detections_collection.aggregate(pipeline))
+    
+    # Count explicitly blocked and resolved ones if status exists
+    # If the ML automatically blocked it, the action is CRITICAL_BLOCK or BLOCK_IP.
+    # If a user manually marked it as resolved, status is "Resolved".
+    resolved_count = detections_collection.count_documents({"action": {"$in": ATTACK_ACTIONS}, "status": "Resolved"})
+    
+    stats = {
+        "total": sum(r["count"] for r in results),
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "blocked": 0,
+        "resolved": resolved_count
+    }
+    
+    for r in results:
+        action = r["_id"]
+        count = r["count"]
+        if action == "CRITICAL_BLOCK":
+            stats["critical"] += count
+            stats["blocked"] += count
+        elif action == "BLOCK_IP":
+            stats["high"] += count
+            stats["blocked"] += count
+        elif action == "ALERT_ADMIN":
+            stats["medium"] += count
+            
+    return stats
+
+# --------------------------------------------------
 # Dashboard: All Paginated Threats
 # --------------------------------------------------
 @app.get("/dashboard/threats")
@@ -1523,7 +1582,7 @@ def get_all_threats(
             "sourceIp":   det.get("source_ip", "Unknown"),
             "targetPort": str(det.get("dst_port", "Any")),
             "confidence": round(conf * 100) if conf <= 1 else round(conf),
-            "status":     STATUS_MAP.get(action, "Flagged"),
+            "status":     det.get("status", STATUS_MAP.get(action, "Flagged")),
             "details":    f"ML detected {det.get('attack_type', 'anomalous traffic')} from {det.get('source_ip')}",
         })
 
@@ -1533,6 +1592,38 @@ def get_all_threats(
         "total_records": total,
         "data":          formatted,
     }
+
+
+class ResolveThreatRequest(BaseModel):
+    source_ip: str
+    timestamp: str
+
+@app.put("/threats/resolve")
+def resolve_threat(req: ResolveThreatRequest, current_user: dict = Depends(get_current_user)):
+    # Try string match first
+    result = detections_collection.update_many(
+        {"source_ip": req.source_ip, "timestamp": req.timestamp},
+        {"$set": {"status": "Resolved"}}
+    )
+    
+    # If not found, try datetime match with a 1-second range (ignores milliseconds)
+    if result.matched_count == 0:
+        try:
+            from datetime import datetime, timedelta
+            dt_obj = datetime.strptime(req.timestamp, "%Y-%m-%d %H:%M:%S")
+            result = detections_collection.update_many(
+                {
+                    "source_ip": req.source_ip, 
+                    "timestamp": {"$gte": dt_obj, "$lt": dt_obj + timedelta(seconds=1)}
+                },
+                {"$set": {"status": "Resolved"}}
+            )
+        except ValueError:
+            pass
+
+    if result.matched_count > 0:
+        return {"message": "Threat marked as resolved"}
+    raise HTTPException(status_code=404, detail="Threat not found")
 
 # --------------------------------------------------
 # Dashboard: Model Stats

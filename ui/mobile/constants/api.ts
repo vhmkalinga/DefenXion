@@ -106,7 +106,7 @@ async function put(path: string, body: any, retry = true): Promise<any> {
     const ok = await reLogin();
     if (ok) return put(path, body, false);
     logout();
-    router.replace('/login');
+    router.replace('/');
     throw new Error(`401 ${path} — login required`);
   }
 
@@ -124,7 +124,7 @@ async function del(path: string, retry = true): Promise<any> {
     const ok = await reLogin();
     if (ok) return del(path, false);
     logout();
-    router.replace('/login');
+    router.replace('/');
     throw new Error(`401 ${path} — login required`);
   }
 
@@ -199,6 +199,8 @@ export const revokeSession       = (sessionId: string) => del(`/auth/sessions/${
 
 // ── Firewall & Defense ────────────────────────────────────────────────
 export const createFirewallRule  = (rule: { name: string; priority?: string; action?: string }) => post('/defense/firewall-rules', rule);
+export const blockIpFirewall    = (ip: string, direction: string = 'both', note: string = '') => post('/firewall/block', { ip, direction, note });
+export const fetchFirewallRules = () => get('/defense/firewall-rules');
 
 // ── App Settings ──────────────────────────────────────────────────────
 export const getAppSettings      = () => get('/settings/app');
