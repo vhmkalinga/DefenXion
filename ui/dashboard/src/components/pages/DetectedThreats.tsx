@@ -9,7 +9,7 @@ import {
 } from 'recharts';
 import { ThreatAnalysisModal } from '../ThreatAnalysisModal';
 import { AnimatePresence } from 'motion/react';
-import { getAllThreats } from '../../services/api';
+import { getAllThreats, getThreatStats } from '../../services/api';
 import { downloadCSV } from '../../utils/export';
 
 /* ── constants ── */
@@ -25,6 +25,7 @@ const STATUS_CFG: Record<string, { color: string; bg: string }> = {
   Flagged:     { color: '#FFA657', bg: 'rgba(255,166,87,0.08)'  },
   Quarantined: { color: '#E3B341', bg: 'rgba(227,179,65,0.08)'  },
   Logged:      { color: '#7D8590', bg: 'rgba(125,133,144,0.08)' },
+  Resolved:    { color: '#3FB950', bg: 'rgba(63,185,80,0.08)'   },
 };
 
 const TOOLTIP_STYLE = {
@@ -137,12 +138,20 @@ export function DetectedThreats() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 15;
+  const [globalStats, setGlobalStats] = useState<any>(null);
 
   const fetchThreats = (silent = false) => {
     if (!silent) setLoading(true);
     else setRefreshing(true);
-    getAllThreats(1, 100)
-      .then(res => { if (res?.data) setThreats(res.data); })
+    
+    Promise.all([
+      getAllThreats(1, 100),
+      getThreatStats()
+    ])
+      .then(([threatRes, statsRes]) => {
+        if (threatRes?.data) setThreats(threatRes.data);
+        if (statsRes) setGlobalStats(statsRes);
+      })
       .catch(console.error)
       .finally(() => { setLoading(false); setRefreshing(false); });
   };
@@ -153,20 +162,40 @@ export function DetectedThreats() {
     return () => clearInterval(id);
   }, []);
 
-  /* derived counts */
-  const counts = useMemo(() => ({
-    total:    threats.length,
-    critical: threats.filter(t => t.severity === 'Critical').length,
-    high:     threats.filter(t => t.severity === 'High').length,
-    blocked:  threats.filter(t => t.status === 'Blocked').length,
-  }), [threats]);
+  /* derived counts - use global stats if available */
+  const counts = useMemo(() => {
+    if (globalStats) {
+      return {
+        total:    globalStats.total,
+        critical: globalStats.critical,
+        high:     globalStats.high,
+        blocked:  globalStats.blocked,
+      };
+    }
+    return {
+      total:    threats.length,
+      critical: threats.filter(t => t.severity === 'Critical').length,
+      high:     threats.filter(t => t.severity === 'High').length,
+      blocked:  threats.filter(t => t.status === 'Blocked').length,
+    };
+  }, [threats, globalStats]);
 
-  const pieData = useMemo(() => [
-    { name: 'Critical', value: counts.critical,                                  fill: '#FF4D4D' },
-    { name: 'High',     value: counts.high,                                      fill: '#FFA657' },
-    { name: 'Medium',   value: threats.filter(t => t.severity === 'Medium').length, fill: '#E3B341' },
-    { name: 'Low',      value: threats.filter(t => t.severity === 'Low').length,    fill: '#58A6FF' },
-  ].filter(d => d.value > 0), [threats, counts]);
+  const pieData = useMemo(() => {
+    if (globalStats) {
+      return [
+        { name: 'Critical', value: globalStats.critical, fill: '#FF4D4D' },
+        { name: 'High',     value: globalStats.high,     fill: '#FFA657' },
+        { name: 'Medium',   value: globalStats.medium,   fill: '#E3B341' },
+        { name: 'Low',      value: globalStats.low,      fill: '#58A6FF' },
+      ].filter(d => d.value > 0);
+    }
+    return [
+      { name: 'Critical', value: counts.critical,                                  fill: '#FF4D4D' },
+      { name: 'High',     value: counts.high,                                      fill: '#FFA657' },
+      { name: 'Medium',   value: threats.filter(t => t.severity === 'Medium').length, fill: '#E3B341' },
+      { name: 'Low',      value: threats.filter(t => t.severity === 'Low').length,    fill: '#58A6FF' },
+    ].filter(d => d.value > 0);
+  }, [threats, counts, globalStats]);
 
   /* filter + sort */
   const filtered = useMemo(() => {
@@ -470,10 +499,9 @@ export function DetectedThreats() {
               ))}
             </div>
 
-            {/* status filter */}
             <div style={{ display:'flex', alignItems:'center', gap:6 }}>
               <span style={{ color:'#7D8590', fontSize:12 }}>Status:</span>
-              {['all','Blocked','Flagged','Logged'].map(v => (
+              {['all','Blocked','Flagged','Logged', 'Resolved'].map(v => (
                 <button key={v} onClick={() => { setStatusFilter(v); setPage(1); }}
                   style={{
                     padding:'5px 12px', borderRadius:20, fontSize:11, fontWeight:600,
@@ -613,7 +641,7 @@ export function DetectedThreats() {
 
       <AnimatePresence>
         {selectedThreat && (
-          <ThreatAnalysisModal threat={selectedThreat} onClose={() => setSelectedThreat(null)} />
+          <ThreatAnalysisModal threat={selectedThreat} onClose={() => setSelectedThreat(null)} onThreatUpdated={() => fetchThreats(true)} />
         )}
       </AnimatePresence>
     </>
