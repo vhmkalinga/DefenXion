@@ -6,27 +6,31 @@ DefenXion is a Machine Learning-based Intrusion Detection System (IDS) developed
 
 ## System Architecture
 
-The project consists of three main educational components:
-1. **Backend API (FastAPI)** - Handles user authentication, runs predictions on the dataset, facilitates continuous model training, interacts with the MongoDB database, and drives the response logic.
+The project consists of four main educational components:
+1. **Backend API (FastAPI)** - Handles user authentication, runs predictions on the dataset, facilitates continuous model training, interacts with the MongoDB database, and drives the active defense response logic and PCAP engine.
 2. **Frontend UI (React + Vite)** - A simple but elegant dashboard for viewing threat analytics, managing alerts, evaluating model accuracy, and monitoring network traffic simulations.
-3. **Machine Learning Pipeline** - Built on the CICIDS2017 dataset, implementing multiple classifiers, feature processing, and scikit-learn models.
+3. **Mobile Companion App (React Native/Expo)** - A mobile application built for remote monitoring of real-time alerts, system analytics, and active defense logs directly from your smartphone.
+4. **Machine Learning Pipeline** - Built on the CICIDS2017 dataset, implementing multiple classifiers, feature processing, and scikit-learn models.
 
 ## Features
 
-- **Network Traffic Analysis**: Evaluates network packets using an ML model to determine anomalous behavior.
-- **Response Simulation**: Simulates blocking IP addresses and alerting administrators based on the confidence scores from the ML classifiers.
+- **Network Traffic Analysis**: Evaluates network packets using an ML model to determine anomalous behavior, capturing live traffic via the integrated PCAP engine.
+- **Active Defense Simulation**: Simulates and automates blocking of malicious IP addresses using local firewall rules (`netsh`) and alerting administrators based on the confidence scores from the ML classifiers.
+- **Security Copilot AI**: Features an integrated LLM-powered chatbot to assist administrators with threat querying, mitigation strategies, and system insights.
 - **Model Training Integration**: Allows retraining ML models directly from the UI to demonstrate lifecycle capabilities.
-- **Visual Analytics**: Displays geospatial attack source data and real-time traffic statistics.
-- **User Authentication**: Simple login using JWT authentication.
+- **Visual Analytics**: Displays geospatial attack source data, live network graphs, and real-time traffic statistics.
+- **User Authentication**: Simple login using JWT authentication across web and mobile.
 
 ---
 
 ## Directory Structure
-- `backend/` - FastAPI backend application containing the core algorithms, ML inferences, and routing.
+- `backend/` - FastAPI backend application containing the core algorithms, ML inferences, PCAP capture engine, and routing.
 - `ui/dashboard/` - Frontend React single-page application created using Vite.
+- `ui/mobile/` - React Native mobile companion app built with Expo.
 - `datasets/` - Contains sample data from the CICIDS2017 dataset used for testing and training.
 - `models/` - Directory storing the serialized/pickled trained ML models (`.pkl` files).
-- `scripts/` - Utility scripts (e.g., initial test user creation).
+- `scripts/` - Utility scripts (e.g., initial test user creation, confusion matrix generators).
+- `defenxion_technical_report.md` - Comprehensive final project report.
 
 ---
 
@@ -80,9 +84,26 @@ The project consists of three main educational components:
    npm run dev
    ```
 
-### 3. Alternative Quick-Start
+### 3. Mobile App Setup
 
-You can execute both servers automatically by double-clicking the `start.bat` file in the root directory if you are on Windows.
+1. **Navigate to the mobile directory:**
+   ```bash
+   cd ui/mobile
+   ```
+2. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+3. **Start the Expo server:**
+   ```bash
+   npx expo start
+   ```
+
+### 4. Alternative Quick-Start
+
+You can execute both web servers automatically by double-clicking the `start.bat` file in the root directory if you are on Windows.
+
+**Note for Active Defense:** If you wish to test the live IP blocking feature which manipulates Windows Firewall (`netsh`), you must start the application using `start_admin.bat`. This launcher will automatically request the necessary elevated Administrator privileges.
 
 ---
 
