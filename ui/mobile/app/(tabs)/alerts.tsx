@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SharedStyles, darkTheme, Theme } from '../../constants/theme';
 import { useTheme } from '../../context/ThemeContext';
-import { fetchRecentAlerts, createFirewallRule } from '../../constants/api';
+import { fetchRecentAlerts, blockIpFirewall, fetchFirewallRules } from '../../constants/api';
 
 function timeAgo(ts: string) {
   if (!ts) return '';
@@ -44,6 +44,29 @@ export default function ThreatsScreen() {
     }
   }, []);
 
+  // On mount, also load existing firewall rules to mark their IPs as blocked
+  useEffect(() => {
+    (async () => {
+      try {
+        const rules = await fetchFirewallRules();
+        if (Array.isArray(rules)) {
+          setBlockedIps(prev => {
+            const next = new Set(prev);
+            rules.forEach((r: any) => {
+              if (r.source_ip && r.status === 'Active') {
+                next.add(r.source_ip);
+              }
+            });
+            return next;
+          });
+        }
+      } catch (e: any) {
+        // Non-critical — just means we can't pre-populate
+        console.log('Could not load firewall rules:', e.message);
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     fetchAll();
     const id = setInterval(() => fetchAll(true), 5000);
@@ -56,15 +79,16 @@ export default function ThreatsScreen() {
     if (blockedIps.has(ip) || ip === 'Unknown') return;
     setBlockingIp(ip);
     try {
-      await createFirewallRule({
-        name: `Manual Block: ${ip}`,
-        priority: 'High',
-        action: 'DROP'
-      });
+      await blockIpFirewall(ip, 'both', `Blocked from Threat Intelligence`);
       setBlockedIps(prev => new Set(prev).add(ip));
-      Alert.alert('Success', `Traffic from ${ip} is now blocked by the firewall.`);
+      Alert.alert('Success', `Traffic from ${ip} is now blocked by the Windows Firewall.`);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to block IP');
+      // If 403, the backend isn't running as admin
+      if (e.message?.includes('403')) {
+        Alert.alert('Admin Required', 'The backend must be running as Administrator to manage Windows Firewall rules.');
+      } else {
+        Alert.alert('Error', e.message || 'Failed to block IP');
+      }
     } finally {
       setBlockingIp(null);
     }
