@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Home, BarChart3, AlertTriangle, Brain, Shield, FileText, Settings, User, LucideIcon, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { useTheme } from "../context/ThemeContext";
+import { getSystemInfo } from "../services/api";
 
 interface SidebarProps { activeItem: string; onItemClick: (item: string) => void; collapsed: boolean; onToggle: () => void; }
 interface MenuItem { id: string; label: string; icon: LucideIcon; adminOnly?: boolean; }
@@ -18,11 +19,16 @@ const menuItems: MenuItem[] = [
 
 export function Sidebar({ activeItem, onItemClick, collapsed, onToggle }: SidebarProps) {
   const [role, setRole] = useState<string | null>(null);
+  const [version, setVersion] = useState<string>("v2.0");
   const { isDark } = useTheme();
 
   useEffect(() => {
     const token = localStorage.getItem("access_token");
     if (token) { try { setRole(JSON.parse(atob(token.split(".")[1])).role); } catch { setRole(null); } }
+    
+    getSystemInfo().then(info => {
+      if (info?.server?.version) setVersion(`v${info.server.version}`);
+    }).catch(console.error);
   }, []);
 
   const W = collapsed ? 68 : 240;
@@ -154,7 +160,7 @@ export function Sidebar({ activeItem, onItemClick, collapsed, onToggle }: Sideba
         color: isDark ? '#30363D' : '#8C959F', fontSize:10, fontWeight:500,
         textAlign: collapsed ? 'center' : 'left', overflow:'hidden', whiteSpace:'nowrap',
       }}>
-        {collapsed ? 'v2.0' : 'DefenXion v2.0 · © 2026'}
+        {collapsed ? version : `DefenXion ${version} · © ${new Date().getFullYear()}`}
       </div>
     </aside>
   );

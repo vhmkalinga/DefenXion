@@ -6,6 +6,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Progress } from './ui/progress';
 import { downloadCSV } from '../utils/export';
 import { toast } from 'sonner';
+import { resolveThreat, manualBlockIp } from '../services/api';
+import { useState } from 'react';
 
 interface ThreatAnalysisModalProps {
   threat: {
@@ -21,6 +23,7 @@ interface ThreatAnalysisModalProps {
     explanations?: { feature: string; importance: number; value: number }[];
   };
   onClose: () => void;
+  onThreatUpdated?: () => void;
 }
 
 const remediationSteps = [
@@ -69,7 +72,7 @@ const attackTimeline = [
   { time: '14:32:15', event: 'Threat neutralized - monitoring continues', type: 'success' },
 ];
 
-export function ThreatAnalysisModal({ threat, onClose }: ThreatAnalysisModalProps) {
+export function ThreatAnalysisModal({ threat, onClose, onThreatUpdated }: ThreatAnalysisModalProps) {
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'Critical': return { bg: 'bg-[#FF4D4D]/10', border: 'border-[#FF4D4D]', text: 'text-[#FF4D4D]' };
@@ -80,6 +83,39 @@ export function ThreatAnalysisModal({ threat, onClose }: ThreatAnalysisModalProp
   };
 
   const colors = getSeverityColor(threat.severity);
+  
+  const [isResolving, setIsResolving] = useState(false);
+  const [isBlocking, setIsBlocking] = useState(false);
+
+  const handleMarkResolved = async () => {
+    try {
+      setIsResolving(true);
+      await resolveThreat(threat.sourceIp, threat.timestamp);
+      toast.success('Threat marked as resolved');
+      if (onThreatUpdated) onThreatUpdated();
+      onClose();
+    } catch (e) {
+      toast.error('Failed to resolve threat');
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
+  const handleBlockIp = async () => {
+    try {
+      setIsBlocking(true);
+      const res = await manualBlockIp(threat.sourceIp);
+      if (res && res.success === false) {
+        throw new Error(res.message || 'Block failed');
+      }
+      toast.success(`IP ${threat.sourceIp} has been blocked`);
+      if (onThreatUpdated) onThreatUpdated();
+    } catch (e: any) {
+      toast.error(e.message || 'Failed to block IP');
+    } finally {
+      setIsBlocking(false);
+    }
+  };
 
   return (
     <motion.div
@@ -389,14 +425,19 @@ username=admin' OR '1'='1&password=test`}
             >
               Download Report
             </Button>
+            <Button
+              className="bg-[#FF4D4D] hover:bg-[#FF4D4D]/90 text-white"
+              onClick={handleBlockIp}
+              disabled={isBlocking}
+            >
+              {isBlocking ? 'Blocking...' : 'Block IP'}
+            </Button>
             <Button 
               className="bg-[#1F6FEB] hover:bg-[#1F6FEB]/90"
-              onClick={() => {
-                toast.success('Threat marked as resolved');
-                onClose();
-              }}
+              onClick={handleMarkResolved}
+              disabled={isResolving || threat.status === 'Resolved'}
             >
-              Mark as Resolved
+              {isResolving ? 'Resolving...' : threat.status === 'Resolved' ? 'Resolved' : 'Mark as Resolved'}
             </Button>
           </div>
         </div>
