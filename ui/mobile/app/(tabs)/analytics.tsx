@@ -61,8 +61,13 @@ export default function AnalyticsScreen() {
 
   const onRefresh = () => { setRefreshing(true); fetchAll(); };
 
-  // Build chart data from traffic history — only show every 4th label to avoid clutter
-  const lineLabels = traffic.map((b, i) => i % 4 === 0 ? b.time : '');
+  // Build chart data from traffic history — show every 5th label + always first & last (skip near-last to avoid overlap)
+  const lastIdx = traffic.length - 1;
+  const lineLabels = traffic.map((b, i) => {
+    if (i === 0 || i === lastIdx) return b.time;
+    if (i % 5 === 0 && i < lastIdx - 2) return b.time;
+    return '';
+  });
   const threatData = traffic.map(b => b.threats || 0);
   const blockData  = traffic.map(b => b.blocked || 0);
   const eventData  = traffic.map(b => b.traffic || 0);
@@ -106,22 +111,26 @@ export default function AnalyticsScreen() {
           <View style={styles.card}>
             <View style={[styles.cardAccent, { backgroundColor: theme.colors.primary }]} />
             <Text style={styles.chartTitle}>Threats & Blocked / min</Text>
-            <LineChart
-              data={{
-                labels: lineLabels,
-                datasets: [
-                  { data: threatData.length ? threatData : [0], color: () => theme.colors.danger,  strokeWidth: 2 },
-                  { data: blockData.length  ? blockData  : [0], color: () => theme.colors.success, strokeWidth: 2 },
-                ],
-                legend: ['Threats', 'Blocked'],
-              }}
-              width={CHART_W}
-              height={200}
-              chartConfig={chartConfig}
-              bezier
-              withDots={false}
-              style={styles.chart}
-            />
+            <View style={styles.chartWrap}>
+              <Text style={styles.yAxisLabel}>Count</Text>
+              <LineChart
+                data={{
+                  labels: lineLabels,
+                  datasets: [
+                    { data: threatData.length ? threatData : [0], color: () => theme.colors.danger,  strokeWidth: 2 },
+                    { data: blockData.length  ? blockData  : [0], color: () => theme.colors.success, strokeWidth: 2 },
+                  ],
+                  legend: ['Threats', 'Blocked'],
+                }}
+                width={CHART_W}
+                height={200}
+                chartConfig={chartConfig}
+                bezier
+                withDots={false}
+                style={styles.chart}
+              />
+              <Text style={styles.xAxisLabel}>Time</Text>
+            </View>
           </View>
         ) : (
           <EmptyChart label="No traffic data yet — run the simulator" />
@@ -132,15 +141,19 @@ export default function AnalyticsScreen() {
           <View style={[styles.card, { marginTop: SharedStyles.spacing.lg }]}>
             <View style={[styles.cardAccent, { backgroundColor: theme.colors.success }]} />
             <Text style={styles.chartTitle}>Total Events / min</Text>
-            <LineChart
-              data={{ labels: lineLabels, datasets: [{ data: eventData.length ? eventData : [0] }] }}
-              width={CHART_W}
-              height={180}
-              chartConfig={{ ...chartConfig, color: (o = 1) => `rgba(63, 185, 80, ${o})` }}
-              bezier
-              withDots={false}
-              style={styles.chart}
-            />
+            <View style={styles.chartWrap}>
+              <Text style={styles.yAxisLabel}>Count</Text>
+              <LineChart
+                data={{ labels: lineLabels, datasets: [{ data: eventData.length ? eventData : [0] }] }}
+                width={CHART_W}
+                height={180}
+                chartConfig={{ ...chartConfig, color: (o = 1) => `rgba(63, 185, 80, ${o})` }}
+                bezier
+                withDots={false}
+                style={styles.chart}
+              />
+              <Text style={styles.xAxisLabel}>Time</Text>
+            </View>
           </View>
         )}
 
@@ -149,15 +162,19 @@ export default function AnalyticsScreen() {
           <View style={[styles.card, { marginTop: SharedStyles.spacing.lg }]}>
             <View style={[styles.cardAccent, { backgroundColor: theme.colors.danger }]} />
             <Text style={styles.chartTitle}>Top Attacking IPs</Text>
-            <BarChart
-              data={{ labels: barLabels, datasets: [{ data: barData.length ? barData : [0] }] }}
-              width={CHART_W}
-              height={200}
-              chartConfig={{ ...chartConfig, color: (o = 1) => `rgba(255, 77, 77, ${o})` }}
-              style={styles.chart}
-              yAxisLabel=""
-              yAxisSuffix=""
-            />
+            <View style={styles.chartWrap}>
+              <Text style={styles.yAxisLabel}>Attacks</Text>
+              <BarChart
+                data={{ labels: barLabels, datasets: [{ data: barData.length ? barData : [0] }] }}
+                width={CHART_W}
+                height={200}
+                chartConfig={{ ...chartConfig, color: (o = 1) => `rgba(255, 77, 77, ${o})` }}
+                style={styles.chart}
+                yAxisLabel=""
+                yAxisSuffix=""
+              />
+              <Text style={styles.xAxisLabel}>IP Address</Text>
+            </View>
             {sources.map((s, i) => (
               <View key={i} style={styles.ipRow}>
                 <Text style={styles.ipAddr}>{s.ip}</Text>
@@ -222,6 +239,9 @@ const getStyles = (theme: Theme) => StyleSheet.create({
   cardAccent:     { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.8 },
   chartTitle:     { color: theme.colors.text, fontSize: 13, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: SharedStyles.spacing.sm },
   chart:          { borderRadius: 12, marginTop: 4 },
+  chartWrap:      { position: 'relative' },
+  yAxisLabel:     { position: 'absolute', left: -4, top: 90, color: theme.colors.textMuted, fontSize: 9, fontWeight: '600', letterSpacing: 0.5, transform: [{ rotate: '-90deg' }], zIndex: 1 },
+  xAxisLabel:     { color: theme.colors.textMuted, fontSize: 9, fontWeight: '600', letterSpacing: 0.5, textAlign: 'center', marginTop: 2 },
 
   ipRow:          { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderTopWidth: 1, borderTopColor: theme.colors.border },
   ipAddr:         { color: theme.colors.text, fontSize: 12, fontFamily: 'monospace' },
